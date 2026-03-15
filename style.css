@@ -488,44 +488,6 @@
     display: none;
 }
 
-
-
-    .lmb_content {
-        grid-template-columns: 1fr;
-    }
-
-    .lmb_sidebar {
-        max-height: 240px;
-    }
-
-    .lmb_grid {
-        grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
-    }
-}
-
-
-
-    .lmb_header_actions {
-        justify-content: stretch;
-    }
-
-    .lmb_header_actions > * {
-        flex: 1 1 auto;
-    }
-
-    .lmb_grid {
-        grid-template-columns: minmax(0, 1fr);
-    }
-
-    .lmb_page_controls {
-        justify-content: space-between;
-    }
-
-    .lmb_card_tool_row > .menu_button {
-        flex: 1 1 calc(50% - 4px);
-    }
-}
-
 /* ══════════════════════════════════════════
    MULTI-SELECT STYLES (NEW)
    ══════════════════════════════════════════ */
@@ -734,184 +696,296 @@
    RESPONSIVE — PHONE (≤640px)
    ══════════════════════════════════════════ */
 
-@media (max-width: 980px), (pointer: coarse) {
+
+/* ══════════════════════════════════════════
+   RESPONSIVE — PHONE (≤640px)
+   ══════════════════════════════════════════ */
+
+@media (max-width: 1200px), (pointer: coarse) {
     .lmb_panel {
         width: 100vw;
         height: calc(100vh - var(--topBarBlockSize, 0px));
         margin: var(--topBarBlockSize, 0px) 0 0;
-        padding: 8px;
+        padding: 4px;
         border-radius: 0;
         border: 0;
-        gap: 8px;
+        gap: 3px;
     }
 
+    /* Hide header on phone */
     .lmb_header {
-        gap: 8px;
-    }
-
-    .lmb_header_copy h2 {
-        font-size: 1.1rem;
-    }
-
-    .lmb_header_actions {
-        gap: 6px;
-    }
-
-    .lmb_header_actions > .menu_button span {
         display: none;
     }
 
+    /* Compact horizontal toolbar */
     .lmb_toolbar {
-        padding: 8px;
-        gap: 6px;
-        border-radius: 12px;
-        flex-direction: column;
-        align-items: stretch;
+        padding: 5px;
+        gap: 4px;
+        border-radius: 10px;
+        flex-direction: row;
+        flex-wrap: wrap;
+        align-items: center;
     }
 
     .lmb_search_wrap {
         min-width: 0;
-        flex: 1 1 auto;
+        flex: 1 1 100%;
+        order: -1;
+    }
+
+    .lmb_search_wrap input {
+        min-height: 32px;
+        font-size: 0.82rem;
     }
 
     .lmb_toolbar > .menu_button {
-        width: 100%;
+        flex: 1 1 auto;
+        min-height: 30px;
+        font-size: 0.76rem;
+        padding: 0 6px;
         justify-content: center;
-        min-height: 44px;
+    }
+
+    .lmb_toolbar > .menu_button span {
+        display: none;
     }
 
     .lmb_toolbar > select {
-        min-height: 44px;
+        min-height: 30px;
+        font-size: 0.76rem;
+        flex: 0 1 auto;
+        max-width: 100px;
     }
 
+    /* Compact main header */
     .lmb_main_header {
-        flex-direction: column;
-        align-items: stretch;
-        gap: 8px;
-        padding: 10px 10px 8px;
+        flex-direction: row;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 4px;
+        padding: 4px 6px;
     }
+
+    .lmb_breadcrumb { font-size: 0.82rem; }
+    .lmb_summary { font-size: 0.72rem; }
 
     .lmb_main_header_actions {
-        flex-direction: column;
-        align-items: stretch;
-        gap: 6px;
+        flex-direction: row;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 3px;
     }
 
-    .lmb_page_controls {
-        justify-content: space-between;
-    }
+    .lmb_page_controls { justify-content: space-between; }
 
     .lmb_page_controls .menu_button {
-        min-width: 44px;
-        min-height: 44px;
+        min-width: 30px;
+        min-height: 30px;
+        padding: 0 6px;
     }
 
     .lmb_grid {
         grid-template-columns: 1fr;
-        gap: 10px;
-        padding: 0 8px 8px;
+        gap: 6px;
+        padding: 0 4px 4px;
     }
 
-    /* Horizontal card layout */
+    /* ── Horizontal card layout ── */
     .lmb_card {
         flex-direction: row;
-        border-radius: 14px;
-        max-height: 180px;
+        border-radius: 10px;
+        min-height: 0;
+        max-height: none;
     }
 
     .lmb_card_cover {
         min-height: unset;
         max-height: unset;
         aspect-ratio: 3 / 4;
-        width: 110px;
-        flex: 0 0 110px;
+        width: 72px;
+        flex: 0 0 72px;
         border-bottom: 0;
         border-right: 1px solid color-mix(in srgb, var(--lmb-border) 85%, transparent 15%);
-        border-radius: 14px 0 0 14px;
+        border-radius: 10px 0 0 10px;
+    }
+
+    .lmb_card_badges {
+        left: 3px;
+        top: 3px;
+        gap: 2px;
+    }
+
+    .lmb_badge {
+        padding: 1px 4px;
+        font-size: 0.58rem;
+        gap: 2px;
+    }
+
+    .lmb_cover_fallback {
+        font-size: 1.4rem;
     }
 
     .lmb_card_body {
-        padding: 10px;
-        gap: 4px;
+        padding: 5px 6px 3px;
+        gap: 1px;
         overflow: hidden;
+        min-width: 0;
+    }
+
+    .lmb_card_title_row {
+        gap: 3px;
     }
 
     .lmb_card_title {
-        font-size: 0.92rem;
+        font-size: 0.8rem;
+        line-height: 1.15;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
     }
 
     .lmb_card_meta {
-        font-size: 0.78rem;
+        font-size: 0.68rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
 
+    .lmb_card_count {
+        font-size: 0.64rem;
+    }
+
+    /* ── Card actions: ultra-compact ── */
     .lmb_card_actions {
-        padding: 0 10px 10px;
-        gap: 6px;
+        padding: 0 5px 4px;
+        gap: 3px;
     }
 
+    /* Open = icon only */
     .lmb_card_open {
-        min-height: 40px;
-        font-size: 0.88rem;
+        min-height: 26px;
+        min-width: 26px;
+        width: 26px;
+        flex: 0 0 26px;
+        padding: 0;
+        font-size: 0.74rem;
     }
 
+    .lmb_card_open span {
+        display: none;
+    }
+
+    /* Folder select */
     .lmb_card_folder_select {
-        font-size: 0.84rem;
-        min-height: 40px;
+        font-size: 0.68rem;
+        min-height: 26px;
+        flex: 1 1 auto;
+        min-width: 0;
+        padding: 0 4px;
+    }
+
+    /* Tool buttons row — 4 icons inline */
+    .lmb_card_tool_row {
+        flex: 0 0 auto;
+        gap: 2px;
+        flex-wrap: nowrap;
     }
 
     .lmb_card_tool_row > .menu_button {
-        flex: 1 1 calc(50% - 4px);
-        min-height: 40px;
+        flex: 0 0 auto;
+        min-height: 26px;
+        min-width: 26px;
+        width: 26px;
+        height: 26px;
+        padding: 0;
+        font-size: 0.7rem;
     }
 
+    .lmb_card_icon_button {
+        min-width: 26px;
+        width: 26px;
+        height: 26px;
+        padding: 0;
+        font-size: 0.7rem;
+    }
+
+    /* Checkbox */
     .lmb_card_checkbox {
-        top: 6px;
-        right: 6px;
-        width: 32px;
-        height: 32px;
+        top: 3px;
+        right: 3px;
+        width: 22px;
+        height: 22px;
+        border-radius: 5px;
     }
 
+    .lmb_card_checkbox i {
+        font-size: 10px;
+    }
+
+    /* Select bar */
     .lmb_select_bar {
-        padding: 8px 10px;
-        gap: 6px;
-        border-radius: 12px;
+        padding: 5px 6px;
+        gap: 4px;
+        border-radius: 8px;
     }
 
     .lmb_select_count {
-        font-size: 0.84rem;
+        font-size: 0.78rem;
         flex: 1 1 100%;
     }
 
     .lmb_select_bar .menu_button {
         flex: 1;
-        min-height: 42px;
-        font-size: 0.84rem;
+        min-height: 32px;
+        font-size: 0.78rem;
     }
 
+    /* Sidebar compact */
     .lmb_sidebar:not(.is-collapsed) {
-        max-height: 220px;
+        max-height: 140px;
     }
 
     .lmb_sidebar_header {
-        padding: 10px 10px 8px;
+        padding: 5px 6px;
+    }
+
+    .lmb_sidebar_header h3 {
+        font-size: 0.84rem;
     }
 
     .lmb_sidebar_header p {
         display: none;
     }
 
+    .lmb_folder_tree {
+        padding: 0 4px 6px;
+    }
+
+    .lmb_virtual_row,
+    .lmb_folder_row {
+        margin: 1px 0;
+        padding: 3px;
+    }
+
+    .lmb_folder_button,
+    .lmb_virtual_button {
+        padding: 4px 6px;
+        min-height: 32px;
+        gap: 5px;
+        font-size: 0.8rem;
+    }
+
+    .lmb_folder_toggle,
+    .lmb_folder_tool {
+        width: 28px;
+        height: 28px;
+    }
+
     .lmb_status {
-        margin: 0 8px;
-        padding: 14px;
-        font-size: 0.9rem;
-    }
-
-    .lmb_breadcrumb {
-        font-size: 0.92rem;
-    }
-
-    .lmb_summary {
-        font-size: 0.84rem;
+        margin: 0 4px;
+        padding: 10px;
+        font-size: 0.82rem;
     }
 }
 
@@ -920,33 +994,29 @@
    ══════════════════════════════════════════ */
 
 @media (max-width: 500px) {
-    .lmb_panel {
-        padding: 6px;
-    }
-
     .lmb_card_cover {
-        width: 90px;
-        flex: 0 0 90px;
+        width: 60px;
+        flex: 0 0 60px;
     }
 
-    .lmb_card {
-        max-height: 160px;
-    }
-
-    .lmb_card_body {
-        padding: 8px;
-    }
-
-    .lmb_card_title {
-        font-size: 0.86rem;
-    }
-
-    .lmb_card_actions {
-        padding: 0 8px 8px;
+    .lmb_card_badges {
+        display: none;
     }
 
     .lmb_toolbar {
-        padding: 6px;
+        padding: 4px;
+    }
+
+    .lmb_panel {
+        padding: 2px;
+        gap: 2px;
+    }
+
+    .lmb_card_body {
+        padding: 4px 5px 2px;
+    }
+
+    .lmb_card_title {
+        font-size: 0.76rem;
     }
 }
-
