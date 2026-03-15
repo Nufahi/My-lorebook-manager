@@ -1,0 +1,10 @@
+{
+    "display_name": "Lorebook Manager",
+    "loading_order": 100,
+    "js": "index.js",
+    "css": "style.css",
+    "author": "Codex and Ayvencore",
+    "version": "0.8.0",
+    "homePage": "https://github.com/SillyTavern/SillyTavern",
+    "auto_update": false
+}

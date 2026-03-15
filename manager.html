@@ -1,0 +1,123 @@
+<div id="lmb_modal" class="lmb_modal lmb_hidden">
+    <div class="lmb_backdrop" data-lmb-action="close"></div>
+    <div class="lmb_panel">
+        <div class="lmb_header">
+            <div class="lmb_header_copy">
+                <h2>Lorebook Manager</h2>
+                <p>Browse, cover, and organize lorebooks with folders and subfolders.</p>
+            </div>
+            <div class="lmb_header_actions">
+                <button id="lmb_refresh" type="button" class="menu_button menu_button_icon interactable" title="Refresh">
+                    <i class="fa-solid fa-arrows-rotate"></i>
+                    <span>Refresh</span>
+                </button>
+                <button id="lmb_close" type="button" class="menu_button menu_button_icon interactable" data-lmb-action="close" title="Close">
+                    <i class="fa-solid fa-xmark"></i>
+                    <span>Close</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Selection bar (hidden by default, shown when items are selected) -->
+        <div id="lmb_select_bar" class="lmb_select_bar lmb_hidden">
+            <span id="lmb_select_count" class="lmb_select_count">0 selected</span>
+            <button id="lmb_select_all" type="button" class="menu_button menu_button_icon interactable" title="Select all on page">
+                <i class="fa-solid fa-check-double"></i>
+                <span>Select All</span>
+            </button>
+            <button id="lmb_deselect_all" type="button" class="menu_button menu_button_icon interactable" title="Clear selection">
+                <i class="fa-solid fa-xmark"></i>
+                <span>Cancel</span>
+            </button>
+            <button id="lmb_bulk_move" type="button" class="menu_button menu_button_icon interactable" title="Move selected to folder">
+                <i class="fa-solid fa-folder-open"></i>
+                <span>Move</span>
+            </button>
+            <button id="lmb_bulk_delete" type="button" class="menu_button menu_button_icon interactable lmb_btn_danger" title="Delete selected lorebooks">
+                <i class="fa-solid fa-trash-can"></i>
+                <span>Delete</span>
+            </button>
+        </div>
+
+        <div class="lmb_toolbar">
+            <div class="lmb_search_wrap">
+                <i class="fa-solid fa-magnifying-glass"></i>
+                <input id="lmb_search" type="search" class="text_pole textarea_compact" placeholder="Search lorebooks or folders">
+            </div>
+            <select id="lmb_sort" class="text_pole textarea_compact">
+                <option value="name-asc">Name A-Z</option>
+                <option value="name-desc">Name Z-A</option>
+                <option value="entries-desc">Most entries</option>
+                <option value="entries-asc">Fewest entries</option>
+            </select>
+            <select id="lmb_page_size" class="text_pole textarea_compact" title="Lorebooks per page">
+                <option value="10">10 / page</option>
+                <option value="25">25 / page</option>
+                <option value="50">50 / page</option>
+                <option value="100">100 / page</option>
+            </select>
+            <button id="lmb_new_lorebook" type="button" class="menu_button interactable">
+                <i class="fa-solid fa-book-medical"></i>
+                <span>New Lorebook</span>
+            </button>
+            <button id="lmb_import_lorebook" type="button" class="menu_button interactable">
+                <i class="fa-solid fa-file-import"></i>
+                <span>Import</span>
+            </button>
+            <button id="lmb_new_folder" type="button" class="menu_button interactable">
+                <i class="fa-solid fa-folder-plus"></i>
+                <span>New Folder</span>
+            </button>
+            <button id="lmb_new_subfolder" type="button" class="menu_button interactable">
+                <i class="fa-solid fa-folder-tree"></i>
+                <span>Subfolder</span>
+            </button>
+        </div>
+
+        <div class="lmb_content">
+            <!-- Mobile sidebar toggle -->
+            <button id="lmb_sidebar_toggle" type="button" class="lmb_sidebar_toggle">
+                <i class="fa-solid fa-folder"></i>
+                <span>Folders</span>
+                <i class="fa-solid fa-chevron-down"></i>
+            </button>
+
+            <aside id="lmb_sidebar" class="lmb_sidebar is-collapsed">
+                <div class="lmb_sidebar_header">
+                    <div>
+                        <h3>Folders</h3>
+                        <p>Drag lorebooks here or use the folder chooser on each card.</p>
+                    </div>
+                </div>
+                <div id="lmb_folder_tree" class="lmb_folder_tree"></div>
+            </aside>
+
+            <section class="lmb_main">
+                <div class="lmb_main_header">
+                    <div id="lmb_breadcrumb" class="lmb_breadcrumb"></div>
+                    <div class="lmb_main_header_actions">
+                        <div id="lmb_summary" class="lmb_summary"></div>
+                        <div id="lmb_page_controls" class="lmb_page_controls">
+                            <button id="lmb_prev_page" type="button" class="menu_button menu_button_icon interactable" title="Previous page">
+                                <i class="fa-solid fa-chevron-left"></i>
+                            </button>
+                            <div id="lmb_page_label" class="lmb_summary"></div>
+                            <button id="lmb_next_page" type="button" class="menu_button menu_button_icon interactable" title="Next page">
+                                <i class="fa-solid fa-chevron-right"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div id="lmb_loading" class="lmb_status lmb_hidden">
+                    <i class="fa-solid fa-spinner fa-spin"></i>
+                    <span>Loading lorebooks...</span>
+                </div>
+                <div id="lmb_empty" class="lmb_status lmb_hidden"></div>
+                <div id="lmb_grid" class="lmb_grid"></div>
+            </section>
+        </div>
+
+        <input id="lmb_cover_input" type="file" accept="image/*" hidden>
+        <input id="lmb_import_input" type="file" accept=".json,.lorebook,.png" hidden>
+    </div>
+</div>
