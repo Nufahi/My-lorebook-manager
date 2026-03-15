@@ -5,6 +5,6 @@
     "css": "style.css",
     "author": "Codex and Ayvencore",
     "version": "0.8.0",
-    "homePage": "https://github.com/SillyTavern/SillyTavern",
-    "auto_update": false
+    "homePage": "https://github.com/Nufahi/My-lorebook-manager",
+    "auto_update": true
 }
