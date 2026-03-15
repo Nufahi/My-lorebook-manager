@@ -611,6 +611,18 @@
    RESPONSIVE — TABLET (≤980px)
    ══════════════════════════════════════════ */
 
+
+/* ── Card bottom row (folder + tools) ── */
+.lmb_card_bottom_row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 1 1 100%;
+    width: 100%;
+}
+.lmb_card_bottom_row .lmb_card_folder_select { flex: 1 1 auto; min-width: 0; }
+.lmb_card_bottom_row .lmb_card_tool_row { flex: 0 0 auto; }
+
 @media (max-width: 1200px) {
     .lmb_panel {
         width: calc(100vw - 12px);
@@ -712,9 +724,28 @@
         gap: 3px;
     }
 
-    /* Hide header on phone */
+    /* Compact header on mobile — keep Close visible */
     .lmb_header {
+        padding: 4px 6px;
+        gap: 6px;
+    }
+    .lmb_header_copy h2 {
+        font-size: 1rem;
+        line-height: 1.1;
+    }
+    .lmb_header_copy p {
         display: none;
+    }
+    .lmb_header_actions .menu_button span {
+        display: none;
+    }
+    .lmb_header_actions {
+        gap: 4px;
+    }
+    .lmb_header_actions .menu_button {
+        min-height: 30px;
+        min-width: 30px;
+        padding: 0 6px;
     }
 
     /* Compact horizontal toolbar */
@@ -856,36 +887,33 @@
         font-size: 0.64rem;
     }
 
-    /* ── Card actions: ultra-compact ── */
+    /* ── Card actions ── */
     .lmb_card_actions {
         padding: 0 5px 4px;
         gap: 3px;
+        flex-direction: column;
     }
 
-    /* Open = icon only */
     .lmb_card_open {
-        min-height: 26px;
-        min-width: 26px;
-        width: 26px;
-        flex: 0 0 26px;
-        padding: 0;
-        font-size: 0.74rem;
+        min-height: 28px;
+        flex: 1 1 100%;
+        width: 100%;
+        padding: 0 6px;
+        font-size: 0.78rem;
     }
 
-    .lmb_card_open span {
-        display: none;
-    }
+    .lmb_card_open span { display: inline; }
 
-    /* Folder select */
+    .lmb_card_bottom_row { gap: 3px; }
+
     .lmb_card_folder_select {
         font-size: 0.68rem;
-        min-height: 26px;
+        min-height: 24px;
         flex: 1 1 auto;
         min-width: 0;
-        padding: 0 4px;
+        padding: 0 3px;
     }
 
-    /* Tool buttons row — 4 icons inline */
     .lmb_card_tool_row {
         flex: 0 0 auto;
         gap: 2px;
@@ -894,20 +922,26 @@
 
     .lmb_card_tool_row > .menu_button {
         flex: 0 0 auto;
-        min-height: 26px;
-        min-width: 26px;
-        width: 26px;
-        height: 26px;
+        min-height: 24px;
+        min-width: 24px;
+        width: 24px;
+        height: 24px;
         padding: 0;
-        font-size: 0.7rem;
+        font-size: 0.68rem;
     }
 
     .lmb_card_icon_button {
-        min-width: 26px;
-        width: 26px;
-        height: 26px;
+        min-width: 24px;
+        width: 24px;
+        height: 24px;
         padding: 0;
-        font-size: 0.7rem;
+        font-size: 0.68rem;
+    }
+
+    .lmb_card_count {
+        display: block;
+        font-size: 0.64rem;
+        line-height: 1.2;
     }
 
     /* Checkbox */
