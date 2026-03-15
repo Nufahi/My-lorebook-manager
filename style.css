@@ -488,6 +488,44 @@
     display: none;
 }
 
+
+
+    .lmb_content {
+        grid-template-columns: 1fr;
+    }
+
+    .lmb_sidebar {
+        max-height: 240px;
+    }
+
+    .lmb_grid {
+        grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+    }
+}
+
+
+
+    .lmb_header_actions {
+        justify-content: stretch;
+    }
+
+    .lmb_header_actions > * {
+        flex: 1 1 auto;
+    }
+
+    .lmb_grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .lmb_page_controls {
+        justify-content: space-between;
+    }
+
+    .lmb_card_tool_row > .menu_button {
+        flex: 1 1 calc(50% - 4px);
+    }
+}
+
 /* ══════════════════════════════════════════
    MULTI-SELECT STYLES (NEW)
    ══════════════════════════════════════════ */
@@ -611,27 +649,7 @@
    RESPONSIVE — TABLET (≤980px)
    ══════════════════════════════════════════ */
 
-
-/* ── Card bottom row (folder + tools) ── */
-
-.lmb_card_bottom_row {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    flex: 1 1 100%;
-    width: 100%;
-}
-
-.lmb_card_bottom_row .lmb_card_folder_select {
-    flex: 1 1 auto;
-    min-width: 0;
-}
-
-.lmb_card_bottom_row .lmb_card_tool_row {
-    flex: 0 0 auto;
-}
-
-@media (max-width: 980px) {
+@media (max-width: 1200px) {
     .lmb_panel {
         width: calc(100vw - 12px);
         height: calc(100vh - var(--topBarBlockSize, 0px) - 12px);
@@ -716,302 +734,184 @@
    RESPONSIVE — PHONE (≤640px)
    ══════════════════════════════════════════ */
 
-
-/* ══════════════════════════════════════════
-   RESPONSIVE — PHONE (≤640px)
-   ══════════════════════════════════════════ */
-
-@media (max-width: 640px) {
+@media (max-width: 980px), (pointer: coarse) {
     .lmb_panel {
         width: 100vw;
         height: calc(100vh - var(--topBarBlockSize, 0px));
         margin: var(--topBarBlockSize, 0px) 0 0;
-        padding: 4px;
+        padding: 8px;
         border-radius: 0;
         border: 0;
-        gap: 3px;
+        gap: 8px;
     }
 
-    /* Hide header on phone */
     .lmb_header {
+        gap: 8px;
+    }
+
+    .lmb_header_copy h2 {
+        font-size: 1.1rem;
+    }
+
+    .lmb_header_actions {
+        gap: 6px;
+    }
+
+    .lmb_header_actions > .menu_button span {
         display: none;
     }
 
-    /* Compact horizontal toolbar */
     .lmb_toolbar {
-        padding: 5px;
-        gap: 4px;
-        border-radius: 10px;
-        flex-direction: row;
-        flex-wrap: wrap;
-        align-items: center;
+        padding: 8px;
+        gap: 6px;
+        border-radius: 12px;
+        flex-direction: column;
+        align-items: stretch;
     }
 
     .lmb_search_wrap {
         min-width: 0;
-        flex: 1 1 100%;
-        order: -1;
-    }
-
-    .lmb_search_wrap input {
-        min-height: 32px;
-        font-size: 0.82rem;
+        flex: 1 1 auto;
     }
 
     .lmb_toolbar > .menu_button {
-        flex: 1 1 auto;
-        min-height: 30px;
-        font-size: 0.76rem;
-        padding: 0 6px;
+        width: 100%;
         justify-content: center;
-    }
-
-    .lmb_toolbar > .menu_button span {
-        display: none;
+        min-height: 44px;
     }
 
     .lmb_toolbar > select {
-        min-height: 30px;
-        font-size: 0.76rem;
-        flex: 0 1 auto;
-        max-width: 100px;
+        min-height: 44px;
     }
 
-    /* Compact main header */
     .lmb_main_header {
-        flex-direction: row;
-        flex-wrap: wrap;
-        align-items: center;
-        gap: 4px;
-        padding: 4px 6px;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 8px;
+        padding: 10px 10px 8px;
     }
-
-    .lmb_breadcrumb { font-size: 0.82rem; }
-    .lmb_summary { font-size: 0.72rem; }
 
     .lmb_main_header_actions {
-        flex-direction: row;
-        flex-wrap: wrap;
-        align-items: center;
-        gap: 3px;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 6px;
     }
 
-    .lmb_page_controls { justify-content: space-between; }
+    .lmb_page_controls {
+        justify-content: space-between;
+    }
 
     .lmb_page_controls .menu_button {
-        min-width: 30px;
-        min-height: 30px;
-        padding: 0 6px;
+        min-width: 44px;
+        min-height: 44px;
     }
 
     .lmb_grid {
         grid-template-columns: 1fr;
-        gap: 6px;
-        padding: 0 4px 4px;
+        gap: 10px;
+        padding: 0 8px 8px;
     }
 
-    /* ── Horizontal card layout ── */
+    /* Horizontal card layout */
     .lmb_card {
         flex-direction: row;
-        border-radius: 10px;
-        min-height: 0;
-        max-height: none;
+        border-radius: 14px;
+        max-height: 180px;
     }
 
     .lmb_card_cover {
         min-height: unset;
         max-height: unset;
         aspect-ratio: 3 / 4;
-        width: 72px;
-        flex: 0 0 72px;
+        width: 110px;
+        flex: 0 0 110px;
         border-bottom: 0;
         border-right: 1px solid color-mix(in srgb, var(--lmb-border) 85%, transparent 15%);
-        border-radius: 10px 0 0 10px;
-    }
-
-    .lmb_card_badges {
-        left: 3px;
-        top: 3px;
-        gap: 2px;
-    }
-
-    .lmb_badge {
-        padding: 1px 4px;
-        font-size: 0.58rem;
-        gap: 2px;
-    }
-
-    .lmb_cover_fallback {
-        font-size: 1.4rem;
+        border-radius: 14px 0 0 14px;
     }
 
     .lmb_card_body {
-        padding: 5px 6px 3px;
-        gap: 1px;
+        padding: 10px;
+        gap: 4px;
         overflow: hidden;
-        min-width: 0;
-    }
-
-    .lmb_card_title_row {
-        gap: 3px;
     }
 
     .lmb_card_title {
-        font-size: 0.8rem;
-        line-height: 1.15;
-        display: -webkit-box;
-        -webkit-line-clamp: 2;
-        -webkit-box-orient: vertical;
-        overflow: hidden;
+        font-size: 0.92rem;
     }
 
     .lmb_card_meta {
-        font-size: 0.68rem;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
-
-    .lmb_card_count {
-        font-size: 0.64rem;
-    }
-
-    /* ── Card actions ── */
-    .lmb_card_actions {
-        padding: 0 5px 4px;
-        gap: 3px;
-        flex-direction: column;
-    }
-
-    /* Open = full width */
-    .lmb_card_open {
-        min-height: 28px;
-        flex: 1 1 100%;
-        width: 100%;
-        padding: 0 6px;
         font-size: 0.78rem;
     }
 
-    /* Bottom row: folder + tools inline */
-    .lmb_card_bottom_row {
-        gap: 3px;
+    .lmb_card_actions {
+        padding: 0 10px 10px;
+        gap: 6px;
+    }
+
+    .lmb_card_open {
+        min-height: 40px;
+        font-size: 0.88rem;
     }
 
     .lmb_card_folder_select {
-        font-size: 0.68rem;
-        min-height: 24px;
-        flex: 1 1 auto;
-        min-width: 0;
-        padding: 0 3px;
-    }
-
-    .lmb_card_tool_row {
-        flex: 0 0 auto;
-        gap: 2px;
-        flex-wrap: nowrap;
+        font-size: 0.84rem;
+        min-height: 40px;
     }
 
     .lmb_card_tool_row > .menu_button {
-        flex: 0 0 auto;
-        min-height: 24px;
-        min-width: 24px;
-        width: 24px;
-        height: 24px;
-        padding: 0;
-        font-size: 0.68rem;
+        flex: 1 1 calc(50% - 4px);
+        min-height: 40px;
     }
 
-    .lmb_card_icon_button {
-        min-width: 24px;
-        width: 24px;
-        height: 24px;
-        padding: 0;
-        font-size: 0.68rem;
-    }
-
-    /* Count as block under title */
-    .lmb_card_count {
-        display: block;
-        font-size: 0.64rem;
-        line-height: 1.2;
-    }
-
-    /* Checkbox */
     .lmb_card_checkbox {
-        top: 3px;
-        right: 3px;
-        width: 22px;
-        height: 22px;
-        border-radius: 5px;
+        top: 6px;
+        right: 6px;
+        width: 32px;
+        height: 32px;
     }
 
-    .lmb_card_checkbox i {
-        font-size: 10px;
-    }
-
-    /* Select bar */
     .lmb_select_bar {
-        padding: 5px 6px;
-        gap: 4px;
-        border-radius: 8px;
+        padding: 8px 10px;
+        gap: 6px;
+        border-radius: 12px;
     }
 
     .lmb_select_count {
-        font-size: 0.78rem;
+        font-size: 0.84rem;
         flex: 1 1 100%;
     }
 
     .lmb_select_bar .menu_button {
         flex: 1;
-        min-height: 32px;
-        font-size: 0.78rem;
+        min-height: 42px;
+        font-size: 0.84rem;
     }
 
-    /* Sidebar compact */
     .lmb_sidebar:not(.is-collapsed) {
-        max-height: 140px;
+        max-height: 220px;
     }
 
     .lmb_sidebar_header {
-        padding: 5px 6px;
-    }
-
-    .lmb_sidebar_header h3 {
-        font-size: 0.84rem;
+        padding: 10px 10px 8px;
     }
 
     .lmb_sidebar_header p {
         display: none;
     }
 
-    .lmb_folder_tree {
-        padding: 0 4px 6px;
-    }
-
-    .lmb_virtual_row,
-    .lmb_folder_row {
-        margin: 1px 0;
-        padding: 3px;
-    }
-
-    .lmb_folder_button,
-    .lmb_virtual_button {
-        padding: 4px 6px;
-        min-height: 32px;
-        gap: 5px;
-        font-size: 0.8rem;
-    }
-
-    .lmb_folder_toggle,
-    .lmb_folder_tool {
-        width: 28px;
-        height: 28px;
-    }
-
     .lmb_status {
-        margin: 0 4px;
-        padding: 10px;
-        font-size: 0.82rem;
+        margin: 0 8px;
+        padding: 14px;
+        font-size: 0.9rem;
+    }
+
+    .lmb_breadcrumb {
+        font-size: 0.92rem;
+    }
+
+    .lmb_summary {
+        font-size: 0.84rem;
     }
 }
 
@@ -1019,30 +919,34 @@
    RESPONSIVE — SMALL PHONE (≤400px)
    ══════════════════════════════════════════ */
 
-@media (max-width: 400px) {
-    .lmb_card_cover {
-        width: 60px;
-        flex: 0 0 60px;
-    }
-
-    .lmb_card_badges {
-        display: none;
-    }
-
-    .lmb_toolbar {
-        padding: 4px;
-    }
-
+@media (max-width: 500px) {
     .lmb_panel {
-        padding: 2px;
-        gap: 2px;
+        padding: 6px;
+    }
+
+    .lmb_card_cover {
+        width: 90px;
+        flex: 0 0 90px;
+    }
+
+    .lmb_card {
+        max-height: 160px;
     }
 
     .lmb_card_body {
-        padding: 4px 5px 2px;
+        padding: 8px;
     }
 
     .lmb_card_title {
-        font-size: 0.76rem;
+        font-size: 0.86rem;
+    }
+
+    .lmb_card_actions {
+        padding: 0 8px 8px;
+    }
+
+    .lmb_toolbar {
+        padding: 6px;
     }
 }
+
