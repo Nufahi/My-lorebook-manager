@@ -1,5 +1,5 @@
 {
-    "display_name": "Lorebook Manager",
+    "display_name": "My lorebook manager",
     "loading_order": 100,
     "js": "index.js",
     "css": "style.css",
