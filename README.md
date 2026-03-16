@@ -4,6 +4,14 @@ A heavily enhanced fork of [SillyTavern-Lorebook-Manager](https://github.com/ayv
 
 Current version: `0.9.0`
 
+## Credits
+
+- **Original Extension** — [ayvencore](https://github.com/ayvencore) • [SillyTavern-Lorebook-Manager](https://github.com/ayvencore/SillyTavern-Lorebook-Manager)
+  The original codebase that this fork is built on. All core functionality (manager modal, folder system, covers, drag-and-drop, active lorebook tracking) comes from ayvencore's work.
+- **This Fork** — [Codex](https://github.com/Nufahi)
+  Multi-select, tags, statistics, activate/deactivate toggle, mobile responsive UI, and various QoL improvements.
+- **"Active Lorebooks" idea** — Fae (credited in the original)
+
 ## What's Different From the Original
 
 The original extension by **[ayvencore](https://github.com/ayvencore)** provides a solid foundation: a visual lorebook manager modal with folder organization, cover images, search/sort/pagination, and active lorebook tracking. This fork keeps all of that and adds a bunch of new features on top, plus a full mobile-first responsive redesign.
@@ -67,24 +75,6 @@ The Active Lorebooks view is chat-aware and shows which lorebooks are currently 
 
 This is a lorebook-level view, not a per-entry activation viewer.
 
-## How It Stores Data
-
-- Folder tree and tag definitions are stored in SillyTavern extension settings under `lorebookManager`
-- Per-lorebook data is stored inside each lorebook JSON under:
-
-```json
-{
-  "extensions": {
-    "lorebook_manager": {
-      "bookId": "uuid",
-      "folderId": "uuid",
-      "coverPath": "user/images/lorebook-manager/example-cover.png",
-      "tags": ["tag1", "tag2"]
-    }
-  }
-}
-```
-
 ## Install
 
 Install through SillyTavern's built-in extension installer:
@@ -92,14 +82,6 @@ Install through SillyTavern's built-in extension installer:
 ```text
 https://github.com/Nufahi/My-lorebook-manager
 ```
-
-## Credits
-
-- **Original Extension** — [ayvencore](https://github.com/ayvencore) • [SillyTavern-Lorebook-Manager](https://github.com/ayvencore/SillyTavern-Lorebook-Manager)
-  The original codebase that this fork is built on. All core functionality (manager modal, folder system, covers, drag-and-drop, active lorebook tracking) comes from ayvencore's work.
-- **This Fork** — [Codex](https://github.com/Nufahi)
-  Multi-select, tags, statistics, activate/deactivate toggle, mobile responsive UI, and various QoL improvements.
-- **"Active Lorebooks" idea** — Fae (credited in the original)
 
 ## Notes
 
