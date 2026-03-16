@@ -42,27 +42,35 @@ The original extension by **[ayvencore](https://github.com/ayvencore)** provides
 ### Desktop — Full Manager View
 The main interface with card grid, sidebar folders, tags, and lorebook covers.
 
-![Desktop View](images/desktop-view.jpg)
+<img width="1348" height="850" alt="image_2026-03-16_17-20-42" src="https://github.com/user-attachments/assets/a5451bab-ab9f-42e2-a78a-69689285dd56" />
 
 ### Sidebar — Folders & Tags
 Folder tree with virtual views (All / No Folder / Active), custom folders, and a dedicated Tags section for filtering.
 
-![Sidebar](images/sidebar.jpg)
+<img width="328" height="471" alt="image_2026-03-16_17-20-42 (5)" src="https://github.com/user-attachments/assets/5c7eb3c0-f3ff-4430-8c8a-a4fa91c319fd" />
 
 ### Card Actions
 Each lorebook card has quick actions: activate/deactivate, open, folder assignment, and a tool row for cover, stats, tags, rename, and delete.
 
-![Card Actions](images/card-actions.jpg)
+<img width="222" height="231" alt="image_2026-03-16_17-20-42 (4)" src="https://github.com/user-attachments/assets/290b3374-2a4d-4726-8759-8981442a6237" />
 
 ### Tag Editor
 Assign existing tags or create new ones per lorebook. Tags appear as chips on cards and as filters in the sidebar.
 
-![Tag Editor](images/tag-editor.jpg)
+<img width="528" height="266" alt="image_2026-03-16_17-20-42 (3)" src="https://github.com/user-attachments/assets/eee2a47e-8786-451b-a2a4-7a23ac59795b" />
 
 ### Statistics Popup
 Detailed breakdown for each lorebook: entry count, enabled/disabled/constant entries, estimated tokens, keywords, file size, folder, tags, and character count.
 
-![Statistics](images/stats.jpg)
+<img width="534" height="476" alt="image_2026-03-16_17-20-42 (2)" src="https://github.com/user-attachments/assets/9e34ad09-c3db-4c8c-87e2-a57ffefc830b" />
+
+## Install
+
+Install through SillyTavern's built-in extension installer:
+
+```text
+https://github.com/Nufahi/My-lorebook-manager
+```
 
 ## Active Lorebooks
 
@@ -74,14 +82,6 @@ The Active Lorebooks view is chat-aware and shows which lorebooks are currently 
 - Group members' lorebooks in group chats
 
 This is a lorebook-level view, not a per-entry activation viewer.
-
-## Install
-
-Install through SillyTavern's built-in extension installer:
-
-```text
-https://github.com/Nufahi/My-lorebook-manager
-```
 
 ## Notes
 
