@@ -32,6 +32,7 @@ const SPECIAL_FOLDERS = Object.freeze({
     ALL: '__all__',
     ACTIVE: '__active__',
     UNFILED: '__unfiled__',
+    LTM: '__ltm__',
 });
 const PAGE_SIZE_OPTIONS = Object.freeze([10, 25, 50, 100]);
 
@@ -41,6 +42,8 @@ const DEFAULT_SETTINGS = Object.freeze({
     sort: 'name-asc',
     pageSize: 25,
     openManagerOnDrawer: true,
+    tagList: [],
+    lorebookTags: {},
 });
 
 const state = {
@@ -64,6 +67,7 @@ const state = {
     worldListObserver: null,
     worldListElement: null,
     toolbarSyncFrame: 0,
+    activeTagFilter: null,
 };
 
 const EXTENSION_NAME = (() => {
@@ -212,11 +216,27 @@ function countActiveLorebooks() {
     return state.lorebooks.filter(record => state.activeLorebookNames.has(record.apiName)).length;
 }
 
+
+function isLtmLorebook(record) {
+    const name = (record.displayName || record.apiName || '').toLowerCase();
+    return name.startsWith('ltm') || name.includes('ltm_') || name.includes('[ltm]') || name.includes('(ltm)');
+}
+
+function countLtmLorebooks() {
+    return state.lorebooks.filter(record => isLtmLorebook(record)).length;
+}
+
+function getFirstSeenTimestamp(record) {
+    const settings = getManagerSettings();
+    return settings.firstSeen?.[record.apiName] || 0;
+}
+
 function isRealFolderId(folderId) {
     return Boolean(folderId)
         && folderId !== SPECIAL_FOLDERS.ALL
         && folderId !== SPECIAL_FOLDERS.ACTIVE
-        && folderId !== SPECIAL_FOLDERS.UNFILED;
+        && folderId !== SPECIAL_FOLDERS.UNFILED
+        && folderId !== SPECIAL_FOLDERS.LTM;
 }
 
 function findCharacterByAvatarOrName(identifier, characters) {
@@ -377,6 +397,10 @@ function compareLorebooks(a, b) {
             return getSortableEntryCount(b, 'desc') - getSortableEntryCount(a, 'desc') || String(a.displayName).localeCompare(String(b.displayName));
         case 'entries-asc':
             return getSortableEntryCount(a, 'asc') - getSortableEntryCount(b, 'asc') || String(a.displayName).localeCompare(String(b.displayName));
+        case 'recent-desc':
+            return (getFirstSeenTimestamp(b) - getFirstSeenTimestamp(a)) || String(b.apiName).localeCompare(String(a.apiName));
+        case 'recent-asc':
+            return (getFirstSeenTimestamp(a) - getFirstSeenTimestamp(b)) || String(a.apiName).localeCompare(String(b.apiName));
         case 'name-asc':
         default:
             return String(a.displayName).localeCompare(String(b.displayName)) || String(a.apiName).localeCompare(String(b.apiName));
@@ -393,6 +417,9 @@ function getVisibleLorebooks() {
             if (folderFilter === SPECIAL_FOLDERS.ACTIVE && !state.activeLorebookNames.has(record.apiName)) {
                 return false;
             }
+            if (folderFilter === SPECIAL_FOLDERS.LTM && !isLtmLorebook(record)) {
+                return false;
+            }
 
             if (folderFilter === SPECIAL_FOLDERS.UNFILED && record.folderId) {
                 return false;
@@ -400,6 +427,13 @@ function getVisibleLorebooks() {
 
             if (subtree && !subtree.has(record.folderId)) {
                 return false;
+            }
+
+            if (state.activeTagFilter) {
+                const bookTags = getLorebookTags(record.apiName);
+                if (!bookTags.includes(state.activeTagFilter)) {
+                    return false;
+                }
             }
 
             if (!searchTerm) {
@@ -410,6 +444,7 @@ function getVisibleLorebooks() {
                 record.displayName,
                 record.apiName,
                 getFolderPathLabel(record.folderId),
+                ...getLorebookTags(record.apiName),
             ].join(' ').toLowerCase();
 
             return haystack.includes(searchTerm);
@@ -618,6 +653,24 @@ async function refreshLorebooks({ showLoader = false } = {}) {
 
         state.lorebooks = lorebooks;
 
+        // Track first-seen timestamps for sort
+        const fsSettings = getManagerSettings();
+        if (!isObject(fsSettings.firstSeen)) { fsSettings.firstSeen = {}; }
+        const knownNames = new Set(Object.keys(fsSettings.firstSeen));
+        const now = Date.now();
+        let hasNewBooks = false;
+        for (const record of lorebooks) {
+            if (!knownNames.has(record.apiName)) {
+                fsSettings.firstSeen[record.apiName] = knownNames.size === 0 ? 0 : now;
+                hasNewBooks = true;
+            }
+        }
+        const currentNames = new Set(lorebooks.map(r => r.apiName));
+        for (const key of Object.keys(fsSettings.firstSeen)) {
+            if (!currentNames.has(key)) { delete fsSettings.firstSeen[key]; }
+        }
+        if (hasNewBooks) { saveManagerSettings(); }
+
         const settings = getManagerSettings();
         const folderExists = isRealFolderId(settings.activeFolderId) ? Boolean(getFolderById(settings.activeFolderId)) : true;
         if (!folderExists) {
@@ -697,7 +750,8 @@ function renderHeaderState() {
         return;
     }
 
-    state.dom.breadcrumb.textContent = getActiveFolderLabel(state.activeFolderId);
+    const tagSuffix = state.activeTagFilter ? ` · Tag: ${state.activeTagFilter}` : '';
+    state.dom.breadcrumb.textContent = getActiveFolderLabel(state.activeFolderId) + tagSuffix;
 
     const visible = getVisibleLorebooks().length;
     const totalPages = clampCurrentPage(visible);
@@ -748,6 +802,52 @@ function renderFolderTree() {
         selectable: true,
         dropTarget: false,
     }));
+
+    tree.appendChild(createVirtualFolderRow({
+        id: SPECIAL_FOLDERS.LTM,
+        label: 'LTM Memory',
+        count: countLtmLorebooks(),
+        iconClass: 'fa-brain',
+        selectable: true,
+        dropTarget: false,
+    }));
+
+    // ── Tag filter section ──
+    const tagList = getTagList();
+    if (tagList.length > 0 || state.activeTagFilter) {
+        const tagDivider = document.createElement('div');
+        tagDivider.className = 'lmb_folder_divider';
+        tagDivider.innerHTML = '<span>Tags</span>';
+        tree.appendChild(tagDivider);
+
+        if (state.activeTagFilter) {
+            const clearRow = createVirtualFolderRow({
+                id: '__clear_tags__',
+                label: 'Clear tag filter',
+                count: state.lorebooks.length,
+                iconClass: 'fa-xmark',
+                selectable: true,
+                dropTarget: false,
+            });
+            tree.appendChild(clearRow);
+        }
+
+        tagList.forEach(tag => {
+            const count = state.lorebooks.filter(r => getLorebookTags(r.apiName).includes(tag)).length;
+            const row = createVirtualFolderRow({
+                id: '__tag__' + tag,
+                label: tag,
+                count,
+                iconClass: 'fa-tag',
+                selectable: true,
+                dropTarget: false,
+            });
+            if (state.activeTagFilter === tag) {
+                row.classList.add('is-selected');
+            }
+            tree.appendChild(row);
+        });
+    }
 
     getSortedFolders().forEach(folder => {
         tree.appendChild(createFolderBranch(folder));
@@ -972,6 +1072,19 @@ function createLorebookCard(record, { folderOptions, globalLorebooks }) {
 
     body.append(titleRow, meta);
 
+    const cardTags = getLorebookTags(record.apiName);
+    if (cardTags.length) {
+        const tagRow = document.createElement('div');
+        tagRow.className = 'lmb_card_tags';
+        cardTags.forEach(tag => {
+            const chip = document.createElement('span');
+            chip.className = 'lmb_tag_chip';
+            chip.textContent = tag;
+            tagRow.appendChild(chip);
+        });
+        body.appendChild(tagRow);
+    }
+
     if (record.displayName !== record.apiName) {
         const fileMeta = document.createElement('p');
         fileMeta.className = 'lmb_card_meta';
@@ -981,6 +1094,16 @@ function createLorebookCard(record, { folderOptions, globalLorebooks }) {
 
     const actions = document.createElement('div');
     actions.className = 'lmb_card_actions';
+
+    const isActive = state.activeLorebookNames.has(record.apiName);
+    const toggleButton = document.createElement('button');
+    toggleButton.type = 'button';
+    toggleButton.className = 'menu_button menu_button_icon interactable lmb_card_toggle_active' + (isActive ? ' is-active' : '');
+    toggleButton.dataset.lmbBookAction = 'toggle-active';
+    toggleButton.title = isActive ? 'Deactivate lorebook' : 'Activate lorebook';
+    toggleButton.innerHTML = isActive
+        ? '<i class="fa-solid fa-bolt"></i><span>Active</span>'
+        : '<i class="fa-regular fa-bolt"></i><span>Activate</span>';
 
     const openButton = document.createElement('button');
     openButton.type = 'button';
@@ -998,11 +1121,15 @@ function createLorebookCard(record, { folderOptions, globalLorebooks }) {
         clearCoverButton.classList.add('lmb_hidden');
     }
     const deleteButton = createCardIconButton('delete', 'Delete lorebook', 'fa-trash-can');
+    const duplicateButton = createCardIconButton('duplicate', 'Duplicate lorebook', 'fa-clone');
+    const statsButton = createCardIconButton('stats', 'View statistics', 'fa-chart-bar');
+    const tagsButton = createCardIconButton('edit-tags', 'Edit tags', 'fa-tags');
+
     const toolRow = document.createElement('div');
     toolRow.className = 'lmb_card_tool_row';
-    toolRow.append(renameButton, coverButton, clearCoverButton, deleteButton);
+    toolRow.append(duplicateButton, statsButton, tagsButton, renameButton, coverButton, clearCoverButton, deleteButton);
 
-    actions.append(openButton, folderSelect, toolRow);
+    actions.append(toggleButton, openButton, folderSelect, toolRow);
     card.append(cover, body, actions);
     return card;
 }
@@ -1015,6 +1142,8 @@ function getActiveFolderLabel(folderId) {
             return 'No Folder';
         case SPECIAL_FOLDERS.ALL:
             return 'All lorebooks';
+        case SPECIAL_FOLDERS.LTM:
+            return 'LTM Memory';
         default:
             return getFolderPathLabel(folderId);
     }
@@ -1027,6 +1156,9 @@ function getLorebookBadges(record, globalLorebooks) {
     }
     if (globalLorebooks.has(record.apiName)) {
         badges.push({ label: 'Global', iconClass: 'fa-globe' });
+    }
+    if (isLtmLorebook(record)) {
+        badges.push({ label: 'LTM', iconClass: 'fa-brain' });
     }
     if (!record.folderId) {
         badges.push({ label: 'No Folder', iconClass: 'fa-folder' });
@@ -1171,7 +1303,18 @@ async function onFolderTreeClick(event) {
 
     switch (action) {
         case 'select-special':
-            setActiveFolder(folderId);
+            if (folderId === '__clear_tags__') {
+                state.activeTagFilter = null;
+                state.currentPage = 1;
+                renderManager();
+            } else if (folderId.startsWith('__tag__')) {
+                state.activeTagFilter = folderId.slice(7);
+                state.currentPage = 1;
+                renderManager();
+            } else {
+                state.activeTagFilter = null;
+                setActiveFolder(folderId);
+            }
             break;
         case 'select-folder':
             setActiveFolder(folderId);
@@ -1234,6 +1377,21 @@ function clearDropTargetStyles() {
     state.dom.folderTree?.querySelectorAll('.is-drop-target').forEach(node => node.classList.remove('is-drop-target'));
 }
 
+
+async function toggleLorebookActive(apiName) {
+    const index = selected_world_info.indexOf(apiName);
+    if (index >= 0) {
+        selected_world_info.splice(index, 1);
+        toastr.info(`Deactivated "${apiName}".`);
+    } else {
+        selected_world_info.push(apiName);
+        toastr.success(`Activated "${apiName}".`);
+    }
+    getContext().saveSettingsDebounced();
+    syncActiveLorebooks();
+    renderManager();
+}
+
 async function onLorebookGridClick(event) {
     const actionElement = event.target.closest('[data-lmb-book-action]');
     if (!actionElement) {
@@ -1266,6 +1424,18 @@ async function onLorebookGridClick(event) {
             break;
         case 'clear-cover':
             await clearLorebookCover(apiName);
+            break;
+        case 'toggle-active':
+            await toggleLorebookActive(apiName);
+            break;
+        case 'duplicate':
+            await duplicateLorebook(apiName);
+            break;
+        case 'stats':
+            await showLorebookStats(apiName);
+            break;
+        case 'edit-tags':
+            await openTagEditor(apiName);
             break;
         case 'delete':
             await deleteLorebookWithCover(apiName);
@@ -1866,7 +2036,6 @@ function onGridCheckboxClick(event) {
     toggleBookSelection(apiName);
 }
 
-
 function onGridDoubleClick(event) {
     const card = event.target.closest('.lmb_card');
     if (!card) return;
@@ -2280,6 +2449,363 @@ function hijackWorldInfoDrawer() {
 }
 
 
+
+// ══════════════════════════════════════════════════════════════
+// FEATURE: DUPLICATE LOREBOOK
+// ══════════════════════════════════════════════════════════════
+
+async function duplicateLorebook(apiName) {
+    const record = findLorebook(apiName);
+    if (!record) {
+        toastr.error('Lorebook not found.');
+        return;
+    }
+
+    const defaultName = getFreeWorldName(`${record.displayName} — Copy`);
+    const newName = await Popup.show.input(
+        'Duplicate Lorebook',
+        `Enter a name for the clone of "${record.displayName}":`,
+        defaultName,
+    );
+
+    if (!newName || !newName.trim()) return;
+
+    try {
+        setLoading(true);
+
+        const sourceData = await loadWorldInfo(record.apiName);
+        if (!sourceData) {
+            toastr.error('Failed to load the source lorebook.');
+            return;
+        }
+
+        const created = await createNewWorldInfo(newName.trim(), { interactive: false });
+        if (!created) {
+            toastr.error('Failed to create the new lorebook.');
+            return;
+        }
+
+        const newData = await loadWorldInfo(newName.trim());
+        if (!newData) {
+            toastr.error('Failed to load the newly created lorebook.');
+            return;
+        }
+
+        newData.entries = structuredClone(sourceData.entries || {});
+
+        const topLevelKeys = [
+            'recursive_scanning', 'scan_depth', 'case_sensitive',
+            'match_whole_words', 'use_group_scoring', 'overflow_alert',
+        ];
+        for (const key of topLevelKeys) {
+            if (key in sourceData) {
+                newData[key] = structuredClone(sourceData[key]);
+            }
+        }
+
+        if (isObject(sourceData.extensions)) {
+            newData.extensions = structuredClone(sourceData.extensions);
+            delete newData.extensions[LOREBOOK_META_KEY];
+        }
+
+        await saveWorldInfo(newName.trim(), newData, true);
+
+        if (record.folderId) {
+            await moveLorebookToFolder(newName.trim(), record.folderId, { silent: true });
+        }
+
+        const settings = getManagerSettings();
+        if (settings.lorebookTags?.[apiName]?.length) {
+            if (!isObject(settings.lorebookTags)) settings.lorebookTags = {};
+            settings.lorebookTags[newName.trim()] = [...settings.lorebookTags[apiName]];
+            saveManagerSettings();
+        }
+
+        await refreshLorebooks({ showLoader: false });
+        toastr.success(`Duplicated "${record.displayName}" → "${newName.trim()}".`);
+    } catch (error) {
+        console.error('[Lorebook Manager] Duplicate failed', error);
+        toastr.error('Failed to duplicate the lorebook.');
+    } finally {
+        setLoading(false);
+    }
+}
+
+
+// ══════════════════════════════════════════════════════════════
+// FEATURE: STATISTICS POPUP
+// ══════════════════════════════════════════════════════════════
+
+function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+
+async function showLorebookStats(apiName) {
+    const record = findLorebook(apiName);
+    if (!record) {
+        toastr.error('Lorebook not found.');
+        return;
+    }
+
+    try {
+        const data = await loadWorldInfo(record.apiName);
+        if (!data) {
+            toastr.error('Failed to load lorebook data.');
+            return;
+        }
+
+        const entries = isObject(data.entries) ? Object.values(data.entries) : [];
+        const entryCount = entries.length;
+
+        let totalChars = 0;
+        let totalKeywords = 0;
+        let enabledCount = 0;
+        let disabledCount = 0;
+        let constantCount = 0;
+
+        for (const entry of entries) {
+            const content = String(entry.content || '');
+            const keys = Array.isArray(entry.key) ? entry.key : [];
+            const secondaryKeys = Array.isArray(entry.keysecondary) ? entry.keysecondary : [];
+
+            totalChars += content.length;
+            totalKeywords += keys.length + secondaryKeys.length;
+
+            if (entry.constant) constantCount++;
+            if (entry.disable === true || entry.enabled === false) {
+                disabledCount++;
+            } else {
+                enabledCount++;
+            }
+        }
+
+        const approxTokens = Math.round(totalChars / 3.5);
+        const sizeKB = (new TextEncoder().encode(JSON.stringify(data)).length / 1024).toFixed(1);
+
+        const tags = getLorebookTags(apiName);
+        const tagsLine = tags.length
+            ? tags.map(t => `<span class="lmb_stat_tag">${escapeHtml(t)}</span>`).join(' ')
+            : '<i>No tags</i>';
+
+        const isActive = state.activeLorebookNames.has(record.apiName);
+        const folderLabel = getFolderPathLabel(record.folderId);
+
+        const html = `
+        <div class="lmb_stats_popup">
+            <div class="lmb_stats_grid">
+                <div class="lmb_stat_card">
+                    <div class="lmb_stat_icon"><i class="fa-solid fa-list"></i></div>
+                    <div class="lmb_stat_value">${entryCount}</div>
+                    <div class="lmb_stat_label">Entries</div>
+                </div>
+                <div class="lmb_stat_card">
+                    <div class="lmb_stat_icon"><i class="fa-solid fa-check-circle"></i></div>
+                    <div class="lmb_stat_value">${enabledCount}</div>
+                    <div class="lmb_stat_label">Enabled</div>
+                </div>
+                <div class="lmb_stat_card">
+                    <div class="lmb_stat_icon"><i class="fa-solid fa-ban"></i></div>
+                    <div class="lmb_stat_value">${disabledCount}</div>
+                    <div class="lmb_stat_label">Disabled</div>
+                </div>
+                <div class="lmb_stat_card">
+                    <div class="lmb_stat_icon"><i class="fa-solid fa-thumbtack"></i></div>
+                    <div class="lmb_stat_value">${constantCount}</div>
+                    <div class="lmb_stat_label">Constant</div>
+                </div>
+                <div class="lmb_stat_card">
+                    <div class="lmb_stat_icon"><i class="fa-solid fa-coins"></i></div>
+                    <div class="lmb_stat_value">~${approxTokens.toLocaleString()}</div>
+                    <div class="lmb_stat_label">Tokens (est.)</div>
+                </div>
+                <div class="lmb_stat_card">
+                    <div class="lmb_stat_icon"><i class="fa-solid fa-key"></i></div>
+                    <div class="lmb_stat_value">${totalKeywords}</div>
+                    <div class="lmb_stat_label">Keywords</div>
+                </div>
+                <div class="lmb_stat_card">
+                    <div class="lmb_stat_icon"><i class="fa-solid fa-weight-hanging"></i></div>
+                    <div class="lmb_stat_value">${sizeKB} KB</div>
+                    <div class="lmb_stat_label">File Size</div>
+                </div>
+                <div class="lmb_stat_card">
+                    <div class="lmb_stat_icon"><i class="fa-solid fa-${isActive ? 'bolt' : 'circle-minus'}"></i></div>
+                    <div class="lmb_stat_value">${isActive ? 'Yes' : 'No'}</div>
+                    <div class="lmb_stat_label">Active</div>
+                </div>
+            </div>
+            <div class="lmb_stats_meta">
+                <p><i class="fa-solid fa-folder"></i> <strong>Folder:</strong> ${escapeHtml(folderLabel)}</p>
+                <p><i class="fa-solid fa-tags"></i> <strong>Tags:</strong> ${tagsLine}</p>
+                <p><i class="fa-solid fa-font"></i> <strong>Characters:</strong> ${totalChars.toLocaleString()}</p>
+            </div>
+        </div>`;
+
+        await Popup.show.text(`Stats: ${record.displayName}`, html);
+    } catch (error) {
+        console.error('[Lorebook Manager] Stats failed', error);
+        toastr.error('Failed to load lorebook statistics.');
+    }
+}
+
+
+// ══════════════════════════════════════════════════════════════
+// FEATURE: TAG SYSTEM
+// ══════════════════════════════════════════════════════════════
+
+function getTagList() {
+    const settings = getManagerSettings();
+    if (!Array.isArray(settings.tagList)) settings.tagList = [];
+    return settings.tagList;
+}
+
+function getLorebookTags(apiName) {
+    const settings = getManagerSettings();
+    if (!isObject(settings.lorebookTags)) settings.lorebookTags = {};
+    return settings.lorebookTags[apiName] || [];
+}
+
+function setLorebookTags(apiName, tags) {
+    const settings = getManagerSettings();
+    if (!isObject(settings.lorebookTags)) settings.lorebookTags = {};
+    settings.lorebookTags[apiName] = [...new Set(tags.map(t => t.trim()).filter(Boolean))];
+    saveManagerSettings();
+}
+
+function ensureTagExists(tagName) {
+    const settings = getManagerSettings();
+    if (!Array.isArray(settings.tagList)) settings.tagList = [];
+    const normalized = tagName.trim();
+    if (!normalized) return;
+    if (!settings.tagList.includes(normalized)) {
+        settings.tagList.push(normalized);
+        settings.tagList.sort((a, b) => a.localeCompare(b));
+        saveManagerSettings();
+    }
+}
+
+async function openTagEditor(apiName) {
+    const record = findLorebook(apiName);
+    if (!record) return;
+
+    const currentTags = getLorebookTags(apiName);
+    const allTags = getTagList();
+
+    // Track checked tags in a Set so we don't depend on DOM after popup closes
+    const checkedSet = new Set(currentTags);
+
+    const checkboxes = allTags.map(tag => {
+        const checked = currentTags.includes(tag) ? 'checked' : '';
+        return `<div class="lmb_tag_row">
+            <label class="lmb_tag_label"><input type="checkbox" class="lmb_tag_cb" value="${escapeHtml(tag)}" ${checked}/> ${escapeHtml(tag)}</label>
+            <button type="button" class="lmb_tag_delete_btn menu_button menu_button_icon interactable" data-tag-name="${escapeHtml(tag)}" title="Delete tag globally">
+                <i class="fa-solid fa-trash-can"></i>
+            </button>
+        </div>`;
+    }).join('');
+
+    const html = `
+    <div class="lmb_tag_editor">
+        <div class="lmb_tag_existing">${checkboxes || '<p style="opacity:0.6">No tags created yet. Add one below!</p>'}</div>
+        <hr/>
+        <div class="lmb_tag_new_row">
+            <input type="text" class="text_pole" id="lmb_new_tag_input" placeholder="New tag name..." />
+            <button class="menu_button menu_button_icon interactable" id="lmb_add_tag_btn" type="button">
+                <i class="fa-solid fa-plus"></i> Add
+            </button>
+        </div>
+    </div>`;
+
+    // Listen for checkbox changes in real time (before popup closes)
+    const onCheckboxChange = (e) => {
+        const cb = e.target.closest('.lmb_tag_cb');
+        if (!cb) return;
+        if (cb.checked) checkedSet.add(cb.value);
+        else checkedSet.delete(cb.value);
+    };
+    document.addEventListener('change', onCheckboxChange, true);
+
+    const result = await Popup.show.confirm(`Tags: ${record.displayName}`, html);
+
+    document.removeEventListener('change', onCheckboxChange, true);
+
+    if (result) {
+        setLorebookTags(apiName, [...checkedSet]);
+        renderManager();
+    }
+}
+
+function removeGlobalTag(tagName) {
+    const settings = getManagerSettings();
+    if (!Array.isArray(settings.tagList)) return;
+    settings.tagList = settings.tagList.filter(t => t !== tagName);
+    if (isObject(settings.lorebookTags)) {
+        for (const key of Object.keys(settings.lorebookTags)) {
+            settings.lorebookTags[key] = settings.lorebookTags[key].filter(t => t !== tagName);
+            if (!settings.lorebookTags[key].length) delete settings.lorebookTags[key];
+        }
+    }
+    if (state.activeTagFilter === tagName) {
+        state.activeTagFilter = null;
+    }
+    saveManagerSettings();
+}
+
+// Global handler for "Add tag" and "Delete tag" buttons inside the popup
+document.addEventListener('click', (e) => {
+    if (e.target.closest('#lmb_add_tag_btn')) {
+        const input = document.getElementById('lmb_new_tag_input');
+        if (!input) return;
+        const name = input.value.trim();
+        if (!name) {
+            toastr.warning('Enter a tag name.');
+            return;
+        }
+        ensureTagExists(name);
+        const container = input.closest('.lmb_tag_editor')?.querySelector('.lmb_tag_existing');
+        if (container) {
+            const placeholder = container.querySelector('p');
+            if (placeholder) placeholder.remove();
+            const row = document.createElement('div');
+            row.className = 'lmb_tag_row';
+            row.innerHTML = `<label class="lmb_tag_label"><input type="checkbox" class="lmb_tag_cb" value="${escapeHtml(name)}" checked/> ${escapeHtml(name)}</label>
+                <button type="button" class="lmb_tag_delete_btn menu_button menu_button_icon interactable" data-tag-name="${escapeHtml(name)}" title="Delete tag globally">
+                    <i class="fa-solid fa-trash-can"></i>
+                </button>`;
+            container.appendChild(row);
+        }
+        input.value = '';
+        toastr.success(`Tag "${name}" added.`);
+    }
+
+    const deleteBtn = e.target.closest('.lmb_tag_delete_btn');
+    if (deleteBtn) {
+        const tagName = deleteBtn.dataset.tagName;
+        if (!tagName) return;
+        const confirmed = confirm(`Delete tag "${tagName}" from ALL lorebooks?`);
+        if (!confirmed) return;
+        removeGlobalTag(tagName);
+        const row = deleteBtn.closest('.lmb_tag_row');
+        if (row) row.remove();
+        const container = deleteBtn.closest('.lmb_tag_existing');
+        if (container && !container.querySelector('.lmb_tag_row')) {
+            container.innerHTML = '<p style="opacity:0.6">No tags created yet. Add one below!</p>';
+        }
+        toastr.info(`Tag "${tagName}" deleted.`);
+    }
+});
+
+// Handle Enter key in tag input
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && e.target?.id === 'lmb_new_tag_input') {
+        e.preventDefault();
+        document.getElementById('lmb_add_tag_btn')?.click();
+    }
+});
+
+
 function initialize() {
     if (state.initialized) {
         return;
@@ -2288,6 +2814,14 @@ function initialize() {
     state.initialized = true;
 
     const settings = getManagerSettings();
+
+    // v2: Reset firstSeen data to fix sort order from previous buggy version
+    if (settings._firstSeenVersion !== 2) {
+        settings.firstSeen = {};
+        settings._firstSeenVersion = 2;
+        saveManagerSettings();
+    }
+
     state.activeFolderId = settings.activeFolderId;
     state.sort = settings.sort;
     state.pageSize = settings.pageSize;
