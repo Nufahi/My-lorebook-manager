@@ -92,4 +92,10 @@ This is a lorebook-level view, not a per-entry activation viewer.
 
 ## License
 
-This is a fork of an open-source project. All original code belongs to its respective author. Contributions and forks are welcome!
+This project is a derivative work based on
+[SillyTavern-Lorebook-Manager](https://github.com/ayvencore/SillyTavern-Lorebook-Manager)
+by ayvencore, licensed under the
+[GNU Affero General Public License v3.0](https://www.gnu.org/licenses/agpl-3.0.html).
+
+This fork is distributed under the same AGPL-3.0 license.
+See [LICENSE](./LICENSE) for the full text.
