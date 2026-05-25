@@ -4,7 +4,7 @@
     "js": "index.js",
     "css": "style.css",
     "author": "Codex and Ayvencore",
-    "version": "0.9.1",
+    "version": "0.9.2",
     "homePage": "https://github.com/Nufahi/My-lorebook-manager",
     "auto_update": true
 }

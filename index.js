@@ -545,6 +545,7 @@ async function ensureManagerDom() {
         bulkMove: modal.querySelector('#lmb_bulk_move'),
         bulkDelete: modal.querySelector('#lmb_bulk_delete'),
         sidebarToggle: modal.querySelector('#lmb_sidebar_toggle'),
+        sidebarToggleLabel: modal.querySelector('#lmb_sidebar_toggle_label'),
         sidebar: modal.querySelector('#lmb_sidebar'),
     };
 
@@ -598,6 +599,10 @@ function bindManagerEvents() {
     state.dom.bulkDelete?.addEventListener('click', onBulkDeleteClick);
     state.dom.bulkMove?.addEventListener('click', onBulkMoveClick);
     state.dom.sidebarToggle?.addEventListener('click', onSidebarToggleClick);
+
+    // Close the mobile sidebar overlay when tapping outside of it.
+    state.dom.modal.addEventListener('click', onSidebarOutsideClick, true);
+
     state.dom.grid.addEventListener('click', onGridCheckboxClick);
 
     // Touch support
@@ -793,7 +798,15 @@ function renderHeaderState() {
     }
 
     const tagSuffix = state.activeTagFilter ? ` · Tag: ${state.activeTagFilter}` : '';
-    state.dom.breadcrumb.textContent = getActiveFolderLabel(state.activeFolderId) + tagSuffix;
+    const folderLabel = getActiveFolderLabel(state.activeFolderId);
+    state.dom.breadcrumb.textContent = folderLabel + tagSuffix;
+
+    if (state.dom.sidebarToggleLabel) {
+        // Compact: show only active tag if filtering, otherwise the folder.
+        state.dom.sidebarToggleLabel.textContent = state.activeTagFilter
+            ? `#${state.activeTagFilter}`
+            : folderLabel;
+    }
 
     const visible = getVisibleLorebooks().length;
     const totalPages = clampCurrentPage(visible);
@@ -1357,9 +1370,11 @@ async function onFolderTreeClick(event) {
                 state.activeTagFilter = null;
                 setActiveFolder(folderId);
             }
+            collapseMobileSidebar();
             break;
         case 'select-folder':
             setActiveFolder(folderId);
+            collapseMobileSidebar();
             break;
         case 'toggle-folder':
             toggleFolderCollapsed(folderId);
@@ -2226,13 +2241,46 @@ async function onBulkMoveClick() {
 
 // ── Sidebar toggle (mobile) ──
 
-function onSidebarToggleClick() {
+function onSidebarToggleClick(event) {
     const sidebar = state.dom.sidebar;
     const toggle = state.dom.sidebarToggle;
     if (!sidebar || !toggle) return;
 
+    event?.stopPropagation();
+
     const isCollapsed = sidebar.classList.toggle('is-collapsed');
     toggle.classList.toggle('is-open', !isCollapsed);
+}
+
+function onSidebarOutsideClick(event) {
+    const sidebar = state.dom.sidebar;
+    const toggle = state.dom.sidebarToggle;
+    if (!sidebar || !toggle) return;
+
+    // Only relevant while the sidebar is expanded as a mobile overlay.
+    if (sidebar.classList.contains('is-collapsed')) return;
+    if (toggle.offsetParent === null) return;
+
+    if (sidebar.contains(event.target) || toggle.contains(event.target)) return;
+
+    collapseMobileSidebar();
+}
+
+// Auto-collapse the sidebar after a folder/tag pick on phones, where the
+// sidebar is shown as an overlay and would otherwise stay on top of the grid.
+function collapseMobileSidebar() {
+    const sidebar = state.dom.sidebar;
+    const toggle = state.dom.sidebarToggle;
+    if (!sidebar || !toggle) return;
+
+    // The toggle button is only visible on mobile/narrow layouts. If it has
+    // zero size we're on desktop and there's nothing to collapse.
+    if (toggle.offsetParent === null) return;
+
+    if (!sidebar.classList.contains('is-collapsed')) {
+        sidebar.classList.add('is-collapsed');
+        toggle.classList.remove('is-open');
+    }
 }
 
 // ══════════════════════════════════════════════════════════════

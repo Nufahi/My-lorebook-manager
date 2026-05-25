@@ -580,24 +580,45 @@
 .lmb_sidebar_toggle {
     display: none;
     align-items: center;
-    justify-content: center;
-    gap: 8px;
-    width: 100%;
-    padding: 10px;
+    justify-content: flex-start;
+    gap: 6px;
+    width: auto;
+    max-width: 100%;
+    padding: 6px 10px;
     border: 1px solid var(--lmb-border);
-    border-radius: 12px;
+    border-radius: 10px;
     background: var(--lmb-surface-strong);
     color: var(--lmb-text);
-    font-size: 0.9rem;
+    font-size: 0.82rem;
+    line-height: 1.15;
     cursor: pointer;
+    min-height: 32px;
+    touch-action: manipulation;
+}
+
+.lmb_sidebar_toggle_label {
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 60vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .lmb_sidebar_toggle i.fa-chevron-down {
     transition: transform 0.2s ease;
+    opacity: 0.6;
+    font-size: 0.7rem;
 }
 
 .lmb_sidebar_toggle.is-open i.fa-chevron-down {
     transform: rotate(180deg);
+    opacity: 1;
+}
+
+.lmb_sidebar_toggle.is-open {
+    border-color: color-mix(in srgb, var(--lmb-accent) 55%, var(--lmb-border) 45%);
+    color: var(--lmb-accent);
 }
 
 /* ── Card cover needs relative for checkbox ── */
@@ -658,25 +679,37 @@
         gap: 10px;
     }
 
+    /* Sidebar becomes an overlay on top of the grid instead of pushing
+       content down, so the grid keeps its full height. */
     .lmb_content {
         grid-template-columns: 1fr;
+        position: relative;
     }
 
     .lmb_sidebar_toggle {
-        display: flex;
+        display: inline-flex;
+        align-self: flex-start;
     }
 
     .lmb_sidebar {
+        position: absolute;
+        top: 36px;
+        left: 0;
+        right: 0;
+        z-index: 30;
         max-height: none;
         border-radius: 14px;
         overflow: hidden;
-        transition: max-height 0.3s ease;
+        transition: max-height 0.25s ease, opacity 0.2s ease;
+        box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
     }
 
     .lmb_sidebar.is-collapsed {
         max-height: 0 !important;
         border: 0;
         padding: 0;
+        opacity: 0;
+        pointer-events: none;
     }
 
     .lmb_sidebar.is-collapsed .lmb_sidebar_header,
@@ -685,7 +718,13 @@
     }
 
     .lmb_sidebar:not(.is-collapsed) {
-        max-height: 280px;
+        max-height: min(60vh, 420px);
+    }
+
+    /* The sidebar overlays the grid; make sure the grid still occupies its
+       row so its scrollbar lines up correctly. */
+    .lmb_main {
+        min-height: 0;
     }
 
     .lmb_grid {
@@ -1006,45 +1045,43 @@
         font-size: 0.78rem;
     }
 
-    /* Sidebar compact */
+    /* Sidebar compact (overlay) — hide its own header on phones, the toggle
+       button + breadcrumb already convey the same context. */
     .lmb_sidebar:not(.is-collapsed) {
-        max-height: 140px;
+        max-height: min(55vh, 380px);
     }
 
     .lmb_sidebar_header {
-        padding: 5px 6px;
-    }
-
-    .lmb_sidebar_header h3 {
-        font-size: 0.84rem;
-    }
-
-    .lmb_sidebar_header p {
         display: none;
     }
 
     .lmb_folder_tree {
-        padding: 0 4px 6px;
+        padding: 4px;
     }
 
     .lmb_virtual_row,
     .lmb_folder_row {
         margin: 1px 0;
-        padding: 3px;
+        padding: 2px;
     }
 
     .lmb_folder_button,
     .lmb_virtual_button {
         padding: 4px 6px;
-        min-height: 32px;
+        min-height: 30px;
         gap: 5px;
-        font-size: 0.8rem;
+        font-size: 0.78rem;
     }
 
     .lmb_folder_toggle,
     .lmb_folder_tool {
-        width: 28px;
-        height: 28px;
+        width: 26px;
+        height: 26px;
+    }
+
+    .lmb_folder_divider {
+        margin: 6px 4px 2px;
+        font-size: 0.66rem;
     }
 
     .lmb_status {
@@ -1085,6 +1122,75 @@
     .lmb_card_title {
         font-size: 0.78rem;
         width: 100%;
+    }
+
+    /* Sidebar overlay sits right under the compact toggle button. */
+    .lmb_sidebar {
+        top: 30px;
+    }
+}
+
+/* ══════════════════════════════════════════
+   RESPONSIVE — VERY NARROW (≤420px, e.g. Galaxy Z Flip cover/portrait)
+   ══════════════════════════════════════════ */
+
+@media (max-width: 420px) {
+    .lmb_sidebar_toggle {
+        padding: 4px 8px;
+        font-size: 0.76rem;
+        min-height: 28px;
+        gap: 5px;
+    }
+
+    .lmb_sidebar_toggle_label {
+        max-width: 50vw;
+    }
+
+    .lmb_sidebar {
+        top: 28px;
+    }
+
+    .lmb_sidebar:not(.is-collapsed) {
+        max-height: min(50vh, 340px);
+    }
+
+    .lmb_folder_tree {
+        padding: 3px;
+    }
+
+    .lmb_folder_button,
+    .lmb_virtual_button {
+        padding: 3px 5px;
+        min-height: 28px;
+        font-size: 0.76rem;
+    }
+
+    .lmb_folder_toggle,
+    .lmb_folder_tool {
+        width: 24px;
+        height: 24px;
+    }
+
+    /* Tighter card meta — folder label often duplicates breadcrumb info. */
+    .lmb_card_meta {
+        font-size: 0.64rem;
+    }
+
+    .lmb_card_cover {
+        width: 54px;
+        flex: 0 0 54px;
+    }
+
+    .lmb_breadcrumb {
+        display: none;
+    }
+
+    .lmb_main_header {
+        padding: 2px 4px;
+    }
+
+    .lmb_content {
+        gap: 6px;
     }
 }
 
