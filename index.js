@@ -46,6 +46,12 @@ const DEFAULT_SETTINGS = Object.freeze({
     lorebookTags: {},
 });
 
+// Double-tap tracker for card selection vs open (declared early so closeManager
+// can safely reset it regardless of file ordering).
+let _lastCardTapTime = 0;
+let _lastCardTapName = '';
+const DOUBLE_TAP_MS = 350;
+
 const state = {
     initialized: false,
     isOpen: false,
@@ -71,9 +77,16 @@ const state = {
 };
 
 const EXTENSION_NAME = (() => {
-    const pathname = new URL(import.meta.url).pathname;
-    const match = pathname.match(/\/scripts\/extensions\/(.+)\/[^/]+$/);
-    return match?.[1] ? decodeURIComponent(match[1]) : 'third-party/SillyTavern-Lorebook-Manager';
+    try {
+        const pathname = new URL(import.meta.url).pathname;
+        const match = pathname.match(/\/scripts\/extensions\/(.+)\/[^/]+$/);
+        if (match?.[1]) {
+            return decodeURIComponent(match[1]);
+        }
+    } catch (error) {
+        console.warn('[Lorebook Manager] Failed to derive extension name from URL', error);
+    }
+    return 'third-party/My-lorebook-manager';
 })();
 
 function isObject(value) {
@@ -316,10 +329,27 @@ function normalizeLorebookMeta(rawMeta) {
     }
 
     if (typeof rawMeta.coverPath === 'string' && rawMeta.coverPath.trim()) {
-        meta.coverPath = rawMeta.coverPath.trim().replace(/\\/g, '/');
+        const candidate = rawMeta.coverPath.trim().replace(/\\/g, '/').replace(/^\/+/, '');
+        if (isSafeCoverPath(candidate)) {
+            meta.coverPath = candidate;
+        }
     }
 
     return meta;
+}
+
+function isSafeCoverPath(path) {
+    if (typeof path !== 'string' || !path) {
+        return false;
+    }
+
+    // Reject absolute paths, parent traversal, NUL bytes and protocol-style URLs.
+    if (path.includes('..') || path.includes('\0') || /^[a-z][a-z0-9+.-]*:/i.test(path)) {
+        return false;
+    }
+
+    // Cover assets must live inside the manager's image subfolder.
+    return path.includes(`/${IMAGE_SUBFOLDER}/`) || path.startsWith(`${IMAGE_SUBFOLDER}/`);
 }
 
 function cleanLorebookMeta(meta) {
@@ -616,6 +646,10 @@ function closeManager() {
     clearSelection();
     state.dom.modal.classList.add('lmb_hidden');
     clearDropTargetStyles();
+
+    // Reset double-tap tracker so the next session starts clean.
+    _lastCardTapTime = 0;
+    _lastCardTapName = '';
 }
 
 function getSelectedRealFolderId() {
@@ -669,6 +703,14 @@ async function refreshLorebooks({ showLoader = false } = {}) {
         for (const key of Object.keys(fsSettings.firstSeen)) {
             if (!currentNames.has(key)) { delete fsSettings.firstSeen[key]; }
         }
+
+        // Drop stale cached entry counts so the map doesn't grow unbounded.
+        for (const cachedName of Object.keys(state.entryCounts)) {
+            if (!currentNames.has(cachedName)) {
+                delete state.entryCounts[cachedName];
+            }
+        }
+
         if (hasNewBooks) { saveManagerSettings(); }
 
         const settings = getManagerSettings();
@@ -1607,7 +1649,27 @@ async function ensureStableLorebookId(apiName) {
     return meta.bookId;
 }
 
+// Per-lorebook write queue to serialize load → mutate → save round-trips.
+// Without this, parallel callers (bulk-move, auto-refresh, cover upload, etc.)
+// could race and silently clobber each other's metadata.
+const _metaWriteQueues = new Map();
+
 async function mutateLorebookMeta(apiName, updater) {
+    const previous = _metaWriteQueues.get(apiName) || Promise.resolve();
+    const next = previous.catch(() => {}).then(() => _mutateLorebookMetaImmediate(apiName, updater));
+    _metaWriteQueues.set(apiName, next);
+
+    try {
+        return await next;
+    } finally {
+        // Drop the queue head once the chain has fully drained.
+        if (_metaWriteQueues.get(apiName) === next) {
+            _metaWriteQueues.delete(apiName);
+        }
+    }
+}
+
+async function _mutateLorebookMetaImmediate(apiName, updater) {
     const data = await loadWorldInfo(apiName);
     if (!isObject(data)) {
         throw new Error(`Lorebook "${apiName}" could not be loaded.`);
@@ -1674,6 +1736,11 @@ async function deleteCoverAsset(coverPath) {
         return;
     }
 
+    if (!isSafeCoverPath(coverPath)) {
+        console.warn('[Lorebook Manager] Refusing to delete cover asset with suspicious path', coverPath);
+        return;
+    }
+
     const response = await fetch('/api/images/delete', {
         method: 'POST',
         headers: getContext().getRequestHeaders(),
@@ -1709,6 +1776,9 @@ async function deleteLorebookWithCover(apiName) {
         toastr.error('Failed to delete the lorebook.');
         return;
     }
+
+    delete state.entryCounts[apiName];
+    state.selectedBooks.delete(apiName);
 
     await refreshLorebooks({ showLoader: false });
     toastr.success(`Deleted "${record.displayName}".`);
@@ -1832,7 +1902,23 @@ function startButtonObserver() {
         hijackWorldInfoDrawer();
     });
 
-    state.buttonObserver.observe(document.body, { childList: true, subtree: true });
+    // Watch only the regions that actually host the WI drawer / popup / nav,
+    // instead of the entire body. This avoids firing on every chat message.
+    const targets = [
+        document.getElementById('WorldInfo'),
+        document.getElementById('world_popup'),
+        document.getElementById('top-settings-holder'),
+        document.getElementById('right-nav-panel'),
+        document.getElementById('sheld'),
+    ].filter(node => node instanceof HTMLElement);
+
+    if (targets.length === 0) {
+        // Fall back to body but only watch direct children so it stays cheap.
+        state.buttonObserver.observe(document.body, { childList: true, subtree: false });
+    } else {
+        targets.forEach(target => state.buttonObserver.observe(target, { childList: true, subtree: true }));
+    }
+
     scheduleToolbarSync();
 }
 
@@ -2001,10 +2087,6 @@ function updateSelectUI() {
     });
 }
 
-let _lastCardTapTime = 0;
-let _lastCardTapName = '';
-const DOUBLE_TAP_MS = 350;
-
 function onGridCheckboxClick(event) {
     const actionEl = event.target.closest('[data-lmb-book-action], select, input');
     if (actionEl && !actionEl.closest('.lmb_card_checkbox') && !actionEl.closest('.lmb_card_cover')) return;
@@ -2087,6 +2169,7 @@ async function onBulkDeleteClick() {
 
         const ok = await deleteWorldInfo(apiName);
         if (ok) {
+            delete state.entryCounts[apiName];
             deleted++;
         } else {
             failed++;
@@ -2110,12 +2193,12 @@ async function onBulkMoveClick() {
 
     const folderOptions = buildFolderOptions();
     const optionsHtml = folderOptions
-        .map(opt => `<option value="${opt.value}">${opt.textContent}</option>`)
+        .map(opt => `<option value="${escapeAttr(opt.value)}">${escapeHtml(opt.textContent)}</option>`)
         .join('');
 
     const html = `
         <div style="margin: 8px 0;">
-            <label style="display:block; margin-bottom:6px;">Move ${count} lorebook(s) to:</label>
+            <label style="display:block; margin-bottom:6px;">Move ${escapeHtml(count)} lorebook(s) to:</label>
             <select id="lmb_bulk_folder_target" class="text_pole" style="width:100%;">
                 <option value="">No Folder</option>
                 ${optionsHtml}
@@ -2189,7 +2272,10 @@ function createDragGhost(card) {
     const ghost = document.createElement('div');
     ghost.className = 'lmb_drag_ghost';
     const title = card.querySelector('.lmb_card_title')?.textContent || '?';
-    ghost.innerHTML = `<i class="fa-solid fa-book-atlas"></i> ${title}`;
+    const icon = document.createElement('i');
+    icon.className = 'fa-solid fa-book-atlas';
+    ghost.appendChild(icon);
+    ghost.appendChild(document.createTextNode(' ' + title));
     ghost.style.cssText = `
         position: fixed; z-index: 9999; padding: 8px 14px;
         border-radius: 10px; background: var(--lmb-surface-strong, rgba(30,30,34,0.95));
@@ -2537,9 +2623,17 @@ async function duplicateLorebook(apiName) {
 // ══════════════════════════════════════════════════════════════
 
 function escapeHtml(str) {
-    const div = document.createElement('div');
-    div.textContent = str;
-    return div.innerHTML;
+    return String(str ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function escapeAttr(str) {
+    // Same as escapeHtml — covers " and ' which are critical for attribute contexts.
+    return escapeHtml(str);
 }
 
 async function showLorebookStats(apiName) {
@@ -2643,7 +2737,7 @@ async function showLorebookStats(apiName) {
             </div>
         </div>`;
 
-        await Popup.show.text(`Stats: ${record.displayName}`, html);
+        await Popup.show.text(`Stats: ${escapeHtml(record.displayName)}`, html);
     } catch (error) {
         console.error('[Lorebook Manager] Stats failed', error);
         toastr.error('Failed to load lorebook statistics.');
@@ -2699,8 +2793,8 @@ async function openTagEditor(apiName) {
     const checkboxes = allTags.map(tag => {
         const checked = currentTags.includes(tag) ? 'checked' : '';
         return `<div class="lmb_tag_row">
-            <label class="lmb_tag_label"><input type="checkbox" class="lmb_tag_cb" value="${escapeHtml(tag)}" ${checked}/> ${escapeHtml(tag)}</label>
-            <button type="button" class="lmb_tag_delete_btn menu_button menu_button_icon interactable" data-tag-name="${escapeHtml(tag)}" title="Delete tag globally">
+            <label class="lmb_tag_label"><input type="checkbox" class="lmb_tag_cb" value="${escapeAttr(tag)}" ${checked}/> ${escapeHtml(tag)}</label>
+            <button type="button" class="lmb_tag_delete_btn menu_button menu_button_icon interactable" data-tag-name="${escapeAttr(tag)}" title="Delete tag globally">
                 <i class="fa-solid fa-trash-can"></i>
             </button>
         </div>`;
@@ -2727,7 +2821,7 @@ async function openTagEditor(apiName) {
     };
     document.addEventListener('change', onCheckboxChange, true);
 
-    const result = await Popup.show.confirm(`Tags: ${record.displayName}`, html);
+    const result = await Popup.show.confirm(`Tags: ${escapeHtml(record.displayName)}`, html);
 
     document.removeEventListener('change', onCheckboxChange, true);
 
@@ -2753,10 +2847,15 @@ function removeGlobalTag(tagName) {
     saveManagerSettings();
 }
 
-// Global handler for "Add tag" and "Delete tag" buttons inside the popup
-document.addEventListener('click', (e) => {
+// Global handler for "Add tag" and "Delete tag" buttons inside the popup.
+// Scoped to clicks happening within an open .lmb_tag_editor to avoid
+// leaking handlers into unrelated UI elsewhere in SillyTavern.
+document.addEventListener('click', async (e) => {
+    const editor = e.target.closest('.lmb_tag_editor');
+    if (!editor) return;
+
     if (e.target.closest('#lmb_add_tag_btn')) {
-        const input = document.getElementById('lmb_new_tag_input');
+        const input = editor.querySelector('#lmb_new_tag_input');
         if (!input) return;
         const name = input.value.trim();
         if (!name) {
@@ -2764,32 +2863,36 @@ document.addEventListener('click', (e) => {
             return;
         }
         ensureTagExists(name);
-        const container = input.closest('.lmb_tag_editor')?.querySelector('.lmb_tag_existing');
+        const container = editor.querySelector('.lmb_tag_existing');
         if (container) {
             const placeholder = container.querySelector('p');
             if (placeholder) placeholder.remove();
             const row = document.createElement('div');
             row.className = 'lmb_tag_row';
-            row.innerHTML = `<label class="lmb_tag_label"><input type="checkbox" class="lmb_tag_cb" value="${escapeHtml(name)}" checked/> ${escapeHtml(name)}</label>
-                <button type="button" class="lmb_tag_delete_btn menu_button menu_button_icon interactable" data-tag-name="${escapeHtml(name)}" title="Delete tag globally">
+            row.innerHTML = `<label class="lmb_tag_label"><input type="checkbox" class="lmb_tag_cb" value="${escapeAttr(name)}" checked/> ${escapeHtml(name)}</label>
+                <button type="button" class="lmb_tag_delete_btn menu_button menu_button_icon interactable" data-tag-name="${escapeAttr(name)}" title="Delete tag globally">
                     <i class="fa-solid fa-trash-can"></i>
                 </button>`;
             container.appendChild(row);
         }
         input.value = '';
         toastr.success(`Tag "${name}" added.`);
+        return;
     }
 
     const deleteBtn = e.target.closest('.lmb_tag_delete_btn');
     if (deleteBtn) {
         const tagName = deleteBtn.dataset.tagName;
         if (!tagName) return;
-        const confirmed = confirm(`Delete tag "${tagName}" from ALL lorebooks?`);
+        const confirmed = await Popup.show.confirm(
+            'Delete tag?',
+            `Remove "${escapeHtml(tagName)}" from ALL lorebooks?`,
+        );
         if (!confirmed) return;
         removeGlobalTag(tagName);
         const row = deleteBtn.closest('.lmb_tag_row');
         if (row) row.remove();
-        const container = deleteBtn.closest('.lmb_tag_existing');
+        const container = editor.querySelector('.lmb_tag_existing');
         if (container && !container.querySelector('.lmb_tag_row')) {
             container.innerHTML = '<p style="opacity:0.6">No tags created yet. Add one below!</p>';
         }
@@ -2797,12 +2900,14 @@ document.addEventListener('click', (e) => {
     }
 });
 
-// Handle Enter key in tag input
+// Handle Enter key in tag input (scoped to .lmb_tag_editor).
 document.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && e.target?.id === 'lmb_new_tag_input') {
-        e.preventDefault();
-        document.getElementById('lmb_add_tag_btn')?.click();
-    }
+    if (e.key !== 'Enter') return;
+    if (e.target?.id !== 'lmb_new_tag_input') return;
+    const editor = e.target.closest('.lmb_tag_editor');
+    if (!editor) return;
+    e.preventDefault();
+    editor.querySelector('#lmb_add_tag_btn')?.click();
 });
 
 
