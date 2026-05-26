@@ -316,7 +316,10 @@
     grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
     grid-auto-rows: max-content;
     align-items: stretch;
+    align-content: start;
     gap: 14px;
+    flex: 1 1 auto;
+    min-height: 0;
 }
 
 .lmb_card {
@@ -679,18 +682,30 @@
         gap: 10px;
     }
 
-    /* Sidebar becomes an overlay on top of the grid instead of pushing
-       content down, so the grid keeps its full height. */
+    /* Sidebar becomes an overlay on top of the main content instead of
+       pushing it down. Switch from grid to a vertical flex stack so the
+       toggle and main content hug each other (no big empty gap above the
+       grid when the sidebar is collapsed). */
     .lmb_content {
-        grid-template-columns: 1fr;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
         position: relative;
     }
 
     .lmb_sidebar_toggle {
         display: inline-flex;
         align-self: flex-start;
+        flex: 0 0 auto;
     }
 
+    .lmb_main {
+        flex: 1 1 auto;
+        min-height: 0;
+    }
+
+    /* Sidebar is overlaid on top of .lmb_main (anchored just below the
+       toggle button) so opening/closing it never resizes the grid. */
     .lmb_sidebar {
         position: absolute;
         top: 36px;
