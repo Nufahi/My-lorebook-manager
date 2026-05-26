@@ -44,6 +44,7 @@ const DEFAULT_SETTINGS = Object.freeze({
     openManagerOnDrawer: true,
     tagList: [],
     lorebookTags: {},
+    pinnedBooks: [],
 });
 
 // Double-tap tracker for card selection vs open (declared early so closeManager
@@ -239,6 +240,30 @@ function countLtmLorebooks() {
     return state.lorebooks.filter(record => isLtmLorebook(record)).length;
 }
 
+function getPinnedBooks() {
+    const settings = getManagerSettings();
+    if (!Array.isArray(settings.pinnedBooks)) settings.pinnedBooks = [];
+    return settings.pinnedBooks;
+}
+
+function isBookPinned(apiName) {
+    return getPinnedBooks().includes(apiName);
+}
+
+function toggleBookPinned(apiName) {
+    const pinned = getPinnedBooks();
+    const index = pinned.indexOf(apiName);
+    if (index >= 0) {
+        pinned.splice(index, 1);
+        toastr.info(`Unpinned "${apiName}".`);
+    } else {
+        pinned.push(apiName);
+        toastr.success(`Pinned "${apiName}".`);
+    }
+    saveManagerSettings();
+    renderManager();
+}
+
 function getFirstSeenTimestamp(record) {
     const settings = getManagerSettings();
     return settings.firstSeen?.[record.apiName] || 0;
@@ -420,6 +445,11 @@ function getSortableEntryCount(record, direction) {
 }
 
 function compareLorebooks(a, b) {
+    // Pinned items always float to the top regardless of sort order
+    const aPinned = isBookPinned(a.apiName) ? 0 : 1;
+    const bPinned = isBookPinned(b.apiName) ? 0 : 1;
+    if (aPinned !== bPinned) return aPinned - bPinned;
+
     switch (state.sort) {
         case 'name-desc':
             return String(b.displayName).localeCompare(String(a.displayName)) || String(b.apiName).localeCompare(String(a.apiName));
@@ -1091,6 +1121,18 @@ function createLorebookCard(record, { folderOptions, globalLorebooks }) {
     });
     cover.appendChild(badges);
 
+    // Pin/favorite star
+    const pinButton = document.createElement('button');
+    pinButton.type = 'button';
+    const pinned = isBookPinned(record.apiName);
+    pinButton.className = 'lmb_card_pin' + (pinned ? ' is-pinned' : '');
+    pinButton.dataset.lmbBookAction = 'toggle-pin';
+    pinButton.title = pinned ? 'Unpin lorebook' : 'Pin lorebook';
+    pinButton.innerHTML = pinned
+        ? '<i class="fa-solid fa-star"></i>'
+        : '<i class="fa-regular fa-star"></i>';
+    cover.appendChild(pinButton);
+
     // Selection checkbox
     const checkbox = document.createElement('div');
     checkbox.className = 'lmb_card_checkbox';
@@ -1101,6 +1143,10 @@ function createLorebookCard(record, { folderOptions, globalLorebooks }) {
 
     if (state.selectedBooks.has(record.apiName)) {
         card.classList.add('is-selected');
+    }
+
+    if (isLtmLorebook(record)) {
+        card.classList.add('is-ltm');
     }
 
     const body = document.createElement('div');
@@ -1180,9 +1226,18 @@ function createLorebookCard(record, { folderOptions, globalLorebooks }) {
     const statsButton = createCardIconButton('stats', 'View statistics', 'fa-chart-bar');
     const tagsButton = createCardIconButton('edit-tags', 'Edit tags', 'fa-tags');
 
+    const linkCharButton = createCardIconButton('link-character', 'Link to character', 'fa-user-tag');
+    const charBindings = getCharacterBindingsForLorebook(record.apiName);
+    if (charBindings.length > 0) {
+        linkCharButton.classList.add('has-link');
+        linkCharButton.classList.add('lmb_card_char_link');
+    } else {
+        linkCharButton.classList.add('lmb_card_char_link');
+    }
+
     const toolRow = document.createElement('div');
     toolRow.className = 'lmb_card_tool_row';
-    toolRow.append(duplicateButton, statsButton, tagsButton, renameButton, coverButton, clearCoverButton, deleteButton);
+    toolRow.append(linkCharButton, duplicateButton, statsButton, tagsButton, renameButton, coverButton, clearCoverButton, deleteButton);
 
     actions.append(toggleButton, openButton, folderSelect, toolRow);
     card.append(cover, body, actions);
@@ -1214,6 +1269,11 @@ function getLorebookBadges(record, globalLorebooks) {
     }
     if (isLtmLorebook(record)) {
         badges.push({ label: 'LTM', iconClass: 'fa-brain' });
+    }
+    const charBindings = getCharacterBindingsForLorebook(record.apiName);
+    for (const binding of charBindings) {
+        const typeLabel = binding.type === 'primary' ? 'Primary' : 'Aux';
+        badges.push({ label: `${typeLabel}: ${binding.charName}`, iconClass: 'fa-user-tag' });
     }
     if (!record.folderId) {
         badges.push({ label: 'No Folder', iconClass: 'fa-folder' });
@@ -1493,6 +1553,12 @@ async function onLorebookGridClick(event) {
             break;
         case 'edit-tags':
             await openTagEditor(apiName);
+            break;
+        case 'toggle-pin':
+            toggleBookPinned(apiName);
+            break;
+        case 'link-character':
+            await openCharacterLinkPopup(apiName);
             break;
         case 'delete':
             await deleteLorebookWithCover(apiName);
@@ -2789,6 +2855,282 @@ async function showLorebookStats(apiName) {
     } catch (error) {
         console.error('[Lorebook Manager] Stats failed', error);
         toastr.error('Failed to load lorebook statistics.');
+    }
+}
+
+
+// ══════════════════════════════════════════════════════════════
+// FEATURE: CHARACTER LOREBOOK LINKING
+// ══════════════════════════════════════════════════════════════
+
+/**
+ * Returns an array of { charName, charIndex, type: 'primary'|'extra' } for every
+ * character that has this lorebook bound (either as primary or auxiliary).
+ */
+function getCharacterBindingsForLorebook(apiName) {
+    const context = getContext();
+    const characters = context.characters || [];
+    const bindings = [];
+
+    for (let i = 0; i < characters.length; i++) {
+        const char = characters[i];
+        if (!char) continue;
+
+        const charName = char.name || char.avatar || `Character ${i}`;
+
+        // Check primary lorebook
+        const primaryLorebook = char.data?.extensions?.world;
+        if (typeof primaryLorebook === 'string' && primaryLorebook.trim() === apiName) {
+            bindings.push({ charName, charIndex: i, avatar: char.avatar, type: 'primary' });
+        }
+
+        // Check auxiliary lorebooks
+        const extras = getCharacterExtraLorebooks(char);
+        if (extras.includes(apiName)) {
+            bindings.push({ charName, charIndex: i, avatar: char.avatar, type: 'extra' });
+        }
+    }
+
+    return bindings;
+}
+
+/**
+ * Sets or clears the PRIMARY lorebook for a character.
+ * This writes directly to the character's data.extensions.world and saves via API.
+ */
+async function setCharacterPrimaryLorebook(character, lorebookName) {
+    if (!character) throw new Error('No character provided');
+
+    // Update in-memory
+    if (!character.data) character.data = {};
+    if (!character.data.extensions) character.data.extensions = {};
+    character.data.extensions.world = lorebookName || '';
+
+    // Persist via the character edit API
+    const response = await fetch('/api/characters/edit', {
+        method: 'POST',
+        headers: getContext().getRequestHeaders(),
+        body: JSON.stringify(character),
+    });
+
+    if (!response.ok) {
+        throw new Error(`Failed to save character (${response.status})`);
+    }
+}
+
+/**
+ * Adds an auxiliary (extra) lorebook for a character.
+ * Mutates world_info.charLore in-place and saves settings.
+ */
+function addCharacterExtraLorebook(character, lorebookName) {
+    const avatarKey = character?.avatar;
+    if (!avatarKey) throw new Error('Character has no avatar key');
+
+    const fileName = getCharaFilename(null, { manualAvatarKey: avatarKey });
+
+    if (!Array.isArray(world_info.charLore)) {
+        world_info.charLore = [];
+    }
+
+    let entry = world_info.charLore.find(e => e?.name === fileName);
+    if (!entry) {
+        entry = { name: fileName, extraBooks: [] };
+        world_info.charLore.push(entry);
+    }
+
+    if (!Array.isArray(entry.extraBooks)) {
+        entry.extraBooks = [];
+    }
+
+    if (!entry.extraBooks.includes(lorebookName)) {
+        entry.extraBooks.push(lorebookName);
+    }
+
+    getContext().saveSettingsDebounced();
+}
+
+/**
+ * Removes an auxiliary (extra) lorebook for a character.
+ */
+function removeCharacterExtraLorebook(character, lorebookName) {
+    const avatarKey = character?.avatar;
+    if (!avatarKey) return;
+
+    const fileName = getCharaFilename(null, { manualAvatarKey: avatarKey });
+
+    if (!Array.isArray(world_info.charLore)) return;
+
+    const entry = world_info.charLore.find(e => e?.name === fileName);
+    if (!entry || !Array.isArray(entry.extraBooks)) return;
+
+    const index = entry.extraBooks.indexOf(lorebookName);
+    if (index >= 0) {
+        entry.extraBooks.splice(index, 1);
+    }
+
+    // Clean up empty entries
+    if (entry.extraBooks.length === 0) {
+        const entryIndex = world_info.charLore.indexOf(entry);
+        if (entryIndex >= 0) {
+            world_info.charLore.splice(entryIndex, 1);
+        }
+    }
+
+    getContext().saveSettingsDebounced();
+}
+
+/**
+ * Opens a popup to link/unlink a lorebook to a character as primary or auxiliary.
+ */
+async function openCharacterLinkPopup(apiName) {
+    const record = findLorebook(apiName);
+    if (!record) return;
+
+    const context = getContext();
+    const characters = context.characters || [];
+
+    if (!characters.length) {
+        toastr.warning('No characters found.');
+        return;
+    }
+
+    // Build character options
+    const charOptions = characters
+        .map((char, index) => ({
+            name: char?.name || char?.avatar || `Character ${index}`,
+            index,
+            avatar: char?.avatar || '',
+        }))
+        .filter(c => c.avatar)
+        .sort((a, b) => a.name.localeCompare(b.name));
+
+    const charSelectHtml = charOptions
+        .map(c => `<option value="${c.index}">${escapeHtml(c.name)}</option>`)
+        .join('');
+
+    // Show current bindings
+    const currentBindings = getCharacterBindingsForLorebook(apiName);
+    let bindingsHtml = '';
+    if (currentBindings.length) {
+        const rows = currentBindings.map(b => {
+            const typeLabel = b.type === 'primary' ? 'Primary' : 'Auxiliary';
+            return `<div class="lmb_char_link_row" style="justify-content:space-between">
+                <span><i class="fa-solid fa-user"></i> ${escapeHtml(b.charName)} — <strong>${typeLabel}</strong></span>
+                <button type="button" class="menu_button menu_button_icon interactable lmb_char_unlink_btn"
+                    data-char-index="${b.charIndex}" data-link-type="${b.type}" title="Remove binding">
+                    <i class="fa-solid fa-link-slash"></i>
+                </button>
+            </div>`;
+        }).join('');
+        bindingsHtml = `<div class="lmb_char_link_info" style="margin-bottom:12px">
+            <strong>Current bindings:</strong>
+            ${rows}
+        </div>`;
+    }
+
+    const html = `
+    <div class="lmb_char_link_popup">
+        ${bindingsHtml}
+        <div class="lmb_char_link_row">
+            <label for="lmb_char_select">Character:</label>
+            <select id="lmb_char_select" class="text_pole textarea_compact">
+                ${charSelectHtml}
+            </select>
+        </div>
+        <div class="lmb_char_link_row">
+            <label for="lmb_link_type">Type:</label>
+            <select id="lmb_link_type" class="text_pole textarea_compact">
+                <option value="primary">Primary Lorebook</option>
+                <option value="extra">Auxiliary Lorebook</option>
+            </select>
+        </div>
+        <div class="lmb_char_link_info">
+            <i class="fa-solid fa-circle-info"></i>
+            <strong>Primary</strong> — the main lorebook bound to the character card.<br>
+            <strong>Auxiliary</strong> — additional lorebook loaded alongside the primary one.
+        </div>
+    </div>`;
+
+    // Handle unlink button clicks
+    const onUnlinkClick = async (e) => {
+        const btn = e.target.closest('.lmb_char_unlink_btn');
+        if (!btn) return;
+
+        const charIndex = parseInt(btn.dataset.charIndex, 10);
+        const linkType = btn.dataset.linkType;
+        const character = characters[charIndex];
+        if (!character) return;
+
+        try {
+            if (linkType === 'primary') {
+                await setCharacterPrimaryLorebook(character, '');
+                toastr.success(`Removed primary lorebook from "${character.name}".`);
+            } else {
+                removeCharacterExtraLorebook(character, apiName);
+                toastr.success(`Removed auxiliary lorebook from "${character.name}".`);
+            }
+            btn.closest('.lmb_char_link_row')?.remove();
+            syncActiveLorebooks();
+            renderManager();
+        } catch (error) {
+            console.error('[Lorebook Manager] Failed to unlink', error);
+            toastr.error('Failed to remove binding.');
+        }
+    };
+    document.addEventListener('click', onUnlinkClick, true);
+
+    const result = await Popup.show.confirm(
+        `Link: ${escapeHtml(record.displayName)}`,
+        html,
+    );
+
+    document.removeEventListener('click', onUnlinkClick, true);
+
+    if (!result) return;
+
+    // Read selections from the popup
+    const charSelect = document.getElementById('lmb_char_select');
+    const typeSelect = document.getElementById('lmb_link_type');
+    if (!charSelect || !typeSelect) return;
+
+    const selectedCharIndex = parseInt(charSelect.value, 10);
+    const selectedType = typeSelect.value;
+    const character = characters[selectedCharIndex];
+
+    if (!character) {
+        toastr.error('Character not found.');
+        return;
+    }
+
+    try {
+        if (selectedType === 'primary') {
+            // Warn if character already has a different primary lorebook
+            const currentPrimary = character.data?.extensions?.world;
+            if (currentPrimary && currentPrimary.trim() && currentPrimary.trim() !== apiName) {
+                const overwrite = await Popup.show.confirm(
+                    'Replace primary lorebook?',
+                    `"${escapeHtml(character.name)}" already has primary lorebook "<strong>${escapeHtml(currentPrimary)}</strong>". Replace it with "<strong>${escapeHtml(record.displayName)}</strong>"?`,
+                );
+                if (!overwrite) return;
+            }
+            await setCharacterPrimaryLorebook(character, apiName);
+            toastr.success(`Set "${record.displayName}" as primary lorebook for "${character.name}".`);
+        } else {
+            // Check if already linked
+            const extras = getCharacterExtraLorebooks(character);
+            if (extras.includes(apiName)) {
+                toastr.info(`"${record.displayName}" is already an auxiliary lorebook for "${character.name}".`);
+                return;
+            }
+            addCharacterExtraLorebook(character, apiName);
+            toastr.success(`Added "${record.displayName}" as auxiliary lorebook for "${character.name}".`);
+        }
+
+        syncActiveLorebooks();
+        renderManager();
+    } catch (error) {
+        console.error('[Lorebook Manager] Failed to link lorebook', error);
+        toastr.error('Failed to link lorebook to character.');
     }
 }
 

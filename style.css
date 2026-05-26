@@ -376,7 +376,7 @@
 
 .lmb_card_badges {
     left: 10px;
-    top: 10px;
+    top: 34px;
     display: flex;
     gap: 6px;
     flex-wrap: wrap;
@@ -578,6 +578,113 @@
     box-shadow: 0 0 0 2px color-mix(in srgb, var(--lmb-accent) 25%, transparent 75%), 0 10px 22px rgba(0, 0, 0, 0.2);
 }
 
+/* ── LTM (memory-book) visual distinction ── */
+
+.lmb_card.is-ltm {
+    border-color: color-mix(in srgb, var(--lmb-accent) 20%, var(--lmb-border) 80%);
+    background:
+        linear-gradient(180deg, color-mix(in srgb, var(--lmb-accent) 6%, transparent) 0%, transparent 34%),
+        color-mix(in srgb, var(--lmb-surface-strong) 88%, rgba(0, 0, 0, 0.35) 12%);
+    opacity: 0.72;
+    transition: opacity 0.15s ease;
+}
+
+.lmb_card.is-ltm:hover {
+    opacity: 0.92;
+}
+
+.lmb_card.is-ltm .lmb_card_cover {
+    filter: brightness(0.78) saturate(0.7);
+    transition: filter 0.15s ease;
+}
+
+.lmb_card.is-ltm:hover .lmb_card_cover {
+    filter: brightness(0.9) saturate(0.85);
+}
+
+/* ── Pinned/Favorite star ── */
+
+.lmb_card_pin {
+    position: absolute;
+    top: 4px;
+    left: 4px;
+    z-index: 4;
+    width: 26px;
+    height: 26px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.45);
+    color: var(--lmb-muted);
+    font-size: 13px;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease;
+    padding: 0;
+}
+
+.lmb_card:hover .lmb_card_pin,
+.lmb_card .lmb_card_pin.is-pinned {
+    opacity: 1;
+}
+
+.lmb_card_pin.is-pinned {
+    color: var(--lmb-accent);
+    background: color-mix(in srgb, var(--lmb-accent) 18%, rgba(0, 0, 0, 0.55) 82%);
+}
+
+.lmb_card_pin:hover {
+    background: color-mix(in srgb, var(--lmb-accent) 30%, rgba(0, 0, 0, 0.55) 70%);
+    color: var(--lmb-accent);
+}
+
+/* ── Character link button & badge ── */
+
+.lmb_card_char_link {
+    transition: all 0.2s ease;
+}
+
+.lmb_card_char_link.has-link {
+    color: var(--lmb-accent);
+    border-color: color-mix(in srgb, var(--lmb-accent) 40%, var(--lmb-border) 60%);
+    background: color-mix(in srgb, var(--lmb-accent) 10%, transparent 90%);
+}
+
+/* ── Character link popup ── */
+
+.lmb_char_link_popup {
+    padding: 4px;
+}
+
+.lmb_char_link_popup .lmb_char_link_row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+
+.lmb_char_link_popup .lmb_char_link_row label {
+    min-width: 80px;
+    font-weight: 600;
+    font-size: 0.9rem;
+}
+
+.lmb_char_link_popup .lmb_char_link_row select {
+    flex: 1;
+    min-width: 0;
+}
+
+.lmb_char_link_info {
+    margin-top: 8px;
+    padding: 8px 10px;
+    border: 1px dashed var(--lmb-border);
+    border-radius: 10px;
+    font-size: 0.82rem;
+    color: var(--lmb-muted);
+}
+
 /* ── Sidebar toggle (mobile) ── */
 
 .lmb_sidebar_toggle {
@@ -774,6 +881,10 @@
         opacity: 1;
     }
 
+    .lmb_card_pin {
+        opacity: 1;
+    }
+
     .lmb_folder_tools {
         opacity: 1;
     }
@@ -921,7 +1032,7 @@
 
     .lmb_card_badges {
         left: 3px;
-        top: 3px;
+        top: 28px;
         gap: 2px;
     }
 
@@ -1039,6 +1150,15 @@
     }
 
     .lmb_card_checkbox i {
+        font-size: 10px;
+    }
+
+    /* Pin star */
+    .lmb_card_pin {
+        top: 3px;
+        left: 3px;
+        width: 22px;
+        height: 22px;
         font-size: 10px;
     }
 
