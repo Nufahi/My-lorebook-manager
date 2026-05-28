@@ -2925,6 +2925,8 @@ async function setCharacterPrimaryLorebook(character, lorebookName) {
         throw new Error('NOT_CURRENT_CHARACTER');
     }
 
+    // #character_world is a hidden input (not a <select>), so charUpdatePrimaryWorld()
+    // can set its value regardless of whether the book is in any dropdown.
     await charUpdatePrimaryWorld(lorebookName || '');
 
     // Keep the in-memory representation in sync for immediate re-render.
@@ -3083,6 +3085,15 @@ async function openCharacterLinkPopup(apiName) {
     };
     document.addEventListener('click', onUnlinkClick, true);
 
+    // Track the current selection in closure variables. The popup DOM is torn
+    // down before `await Popup.show.confirm()` resolves, so reading the
+    // <select> elements afterwards would always return null. We capture the
+    // values live instead.
+    let selectedCharIndex = charOptions.length
+        ? (charOptions.find(c => c.isCurrent)?.index ?? charOptions[0].index)
+        : NaN;
+    let selectedType = 'primary';
+
     // Live validation: Primary only works for the current character. When the
     // selected character isn't current and Primary is chosen, show a warning
     // and disable the Primary option.
@@ -3106,6 +3117,10 @@ async function openCharacterLinkPopup(apiName) {
         if (warn) {
             warn.style.display = isCurrent ? 'none' : 'block';
         }
+
+        // Capture live so we can use them after the popup closes.
+        selectedCharIndex = parseInt(charSel.value, 10);
+        selectedType = typeSel.value;
     };
     const onPopupChange = (e) => {
         if (e.target?.id === 'lmb_char_select' || e.target?.id === 'lmb_link_type') {
@@ -3126,14 +3141,15 @@ async function openCharacterLinkPopup(apiName) {
 
     if (!result) return;
 
-    // Read selections from the popup
-    const charSelect = document.getElementById('lmb_char_select');
-    const typeSelect = document.getElementById('lmb_link_type');
-    if (!charSelect || !typeSelect) return;
-
-    const selectedCharIndex = parseInt(charSelect.value, 10);
-    const selectedType = typeSelect.value;
     const character = characters[selectedCharIndex];
+
+    console.debug('[Lorebook Manager] Link confirm:', {
+        apiName,
+        selectedCharIndex,
+        selectedType,
+        characterName: character?.name,
+        isCurrent: isCurrentCharacter(character),
+    });
 
     if (!character) {
         toastr.error('Character not found.');
