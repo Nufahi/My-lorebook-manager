@@ -2172,8 +2172,11 @@ function updateSelectUI() {
 }
 
 function onGridCheckboxClick(event) {
-    const actionEl = event.target.closest('[data-lmb-book-action], select, input');
-    if (actionEl && !actionEl.closest('.lmb_card_checkbox') && !actionEl.closest('.lmb_card_cover')) return;
+    // Any explicit action control (pin star, link, buttons, selects, inputs)
+    // handles its own click in onLorebookGridClick — never let it also toggle
+    // the selection checkbox. This includes the favorite star, which lives
+    // inside the cover.
+    if (event.target.closest('[data-lmb-book-action], button, select, input, a')) return;
 
     const card = event.target.closest('.lmb_card');
     if (!card) return;
