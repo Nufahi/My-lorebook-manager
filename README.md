@@ -2,7 +2,7 @@
 
 A heavily enhanced fork of [SillyTavern-Lorebook-Manager](https://github.com/ayvencore/SillyTavern-Lorebook-Manager) — a visual manager for lorebooks / World Info files in SillyTavern.
 
-Current version: `0.9.2`
+Current version: `0.9.3`
 
 ## Credits
 
