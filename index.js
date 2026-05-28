@@ -5,6 +5,9 @@ import {
 } from '../../../extensions.js';
 
 import {
+    charSetAuxWorlds,
+    charUpdateAddAuxWorld,
+    charUpdatePrimaryWorld,
     createNewWorldInfo,
     deleteWorldInfo,
     getFreeWorldName,
@@ -2895,88 +2898,67 @@ function getCharacterBindingsForLorebook(apiName) {
 }
 
 /**
+ * Returns true if the given character is the one currently open in the
+ * character editor / active in the chat. Primary lorebook binding only works
+ * for the current character because SillyTavern's charUpdatePrimaryWorld()
+ * writes through the #character_world DOM element and createOrEditCharacter().
+ */
+function isCurrentCharacter(character) {
+    if (!character) return false;
+    const context = getContext();
+    const current = context.characters?.[context.characterId];
+    if (!current) return false;
+    return current.avatar === character.avatar;
+}
+
+/**
  * Sets or clears the PRIMARY lorebook for a character.
- * This writes directly to the character's data.extensions.world and saves via API.
+ *
+ * Uses SillyTavern's own charUpdatePrimaryWorld(), which updates the
+ * #character_world selector and persists through createOrEditCharacter().
+ * This only works for the character currently open in the editor.
  */
 async function setCharacterPrimaryLorebook(character, lorebookName) {
     if (!character) throw new Error('No character provided');
 
-    // Update in-memory
+    if (!isCurrentCharacter(character)) {
+        throw new Error('NOT_CURRENT_CHARACTER');
+    }
+
+    await charUpdatePrimaryWorld(lorebookName || '');
+
+    // Keep the in-memory representation in sync for immediate re-render.
     if (!character.data) character.data = {};
     if (!character.data.extensions) character.data.extensions = {};
     character.data.extensions.world = lorebookName || '';
-
-    // Persist via the character edit API
-    const response = await fetch('/api/characters/edit', {
-        method: 'POST',
-        headers: getContext().getRequestHeaders(),
-        body: JSON.stringify(character),
-    });
-
-    if (!response.ok) {
-        throw new Error(`Failed to save character (${response.status})`);
-    }
 }
 
 /**
  * Adds an auxiliary (extra) lorebook for a character.
- * Mutates world_info.charLore in-place and saves settings.
+ * Uses SillyTavern's charUpdateAddAuxWorld(), which writes world_info.charLore
+ * and saves settings. Works for any character by avatar key.
  */
 function addCharacterExtraLorebook(character, lorebookName) {
     const avatarKey = character?.avatar;
     if (!avatarKey) throw new Error('Character has no avatar key');
 
-    const fileName = getCharaFilename(null, { manualAvatarKey: avatarKey });
-
-    if (!Array.isArray(world_info.charLore)) {
-        world_info.charLore = [];
-    }
-
-    let entry = world_info.charLore.find(e => e?.name === fileName);
-    if (!entry) {
-        entry = { name: fileName, extraBooks: [] };
-        world_info.charLore.push(entry);
-    }
-
-    if (!Array.isArray(entry.extraBooks)) {
-        entry.extraBooks = [];
-    }
-
-    if (!entry.extraBooks.includes(lorebookName)) {
-        entry.extraBooks.push(lorebookName);
-    }
-
-    getContext().saveSettingsDebounced();
+    charUpdateAddAuxWorld(avatarKey, lorebookName);
 }
 
 /**
  * Removes an auxiliary (extra) lorebook for a character.
+ * Uses SillyTavern's charSetAuxWorlds() with the lorebook filtered out, which
+ * cleans up empty entries and saves settings.
  */
 function removeCharacterExtraLorebook(character, lorebookName) {
     const avatarKey = character?.avatar;
     if (!avatarKey) return;
 
     const fileName = getCharaFilename(null, { manualAvatarKey: avatarKey });
+    if (!fileName) return;
 
-    if (!Array.isArray(world_info.charLore)) return;
-
-    const entry = world_info.charLore.find(e => e?.name === fileName);
-    if (!entry || !Array.isArray(entry.extraBooks)) return;
-
-    const index = entry.extraBooks.indexOf(lorebookName);
-    if (index >= 0) {
-        entry.extraBooks.splice(index, 1);
-    }
-
-    // Clean up empty entries
-    if (entry.extraBooks.length === 0) {
-        const entryIndex = world_info.charLore.indexOf(entry);
-        if (entryIndex >= 0) {
-            world_info.charLore.splice(entryIndex, 1);
-        }
-    }
-
-    getContext().saveSettingsDebounced();
+    const remaining = getCharacterExtraLorebooks(character).filter(name => name !== lorebookName);
+    charSetAuxWorlds(fileName, remaining);
 }
 
 /**
@@ -2994,18 +2976,27 @@ async function openCharacterLinkPopup(apiName) {
         return;
     }
 
-    // Build character options
+    // Build character options. Mark the character currently open in the editor,
+    // since Primary linking only works for that one.
+    const currentChar = context.characters?.[context.characterId] || null;
+    const currentAvatar = currentChar?.avatar || '';
+
     const charOptions = characters
         .map((char, index) => ({
             name: char?.name || char?.avatar || `Character ${index}`,
             index,
             avatar: char?.avatar || '',
+            isCurrent: !!char?.avatar && char.avatar === currentAvatar,
         }))
         .filter(c => c.avatar)
         .sort((a, b) => a.name.localeCompare(b.name));
 
     const charSelectHtml = charOptions
-        .map(c => `<option value="${c.index}">${escapeHtml(c.name)}</option>`)
+        .map(c => {
+            const label = c.isCurrent ? `${c.name} (current)` : c.name;
+            const selected = c.isCurrent ? ' selected' : '';
+            return `<option value="${c.index}" data-current="${c.isCurrent ? '1' : '0'}"${selected}>${escapeHtml(label)}</option>`;
+        })
         .join('');
 
     // Show current bindings
@@ -3049,6 +3040,11 @@ async function openCharacterLinkPopup(apiName) {
             <strong>Primary</strong> — the main lorebook bound to the character card.<br>
             <strong>Auxiliary</strong> — additional lorebook loaded alongside the primary one.
         </div>
+        <div class="lmb_char_link_warn" id="lmb_primary_warn" style="display:none">
+            <i class="fa-solid fa-triangle-exclamation"></i>
+            Primary linking only works for the character currently open in the editor.
+            Open that character first, or use <strong>Auxiliary</strong> instead.
+        </div>
     </div>`;
 
     // Handle unlink button clicks
@@ -3063,6 +3059,10 @@ async function openCharacterLinkPopup(apiName) {
 
         try {
             if (linkType === 'primary') {
+                if (!isCurrentCharacter(character)) {
+                    toastr.warning(`Open "${character.name}" in the character panel first to remove its primary lorebook.`);
+                    return;
+                }
                 await setCharacterPrimaryLorebook(character, '');
                 toastr.success(`Removed primary lorebook from "${character.name}".`);
             } else {
@@ -3073,11 +3073,48 @@ async function openCharacterLinkPopup(apiName) {
             syncActiveLorebooks();
             renderManager();
         } catch (error) {
+            if (error?.message === 'NOT_CURRENT_CHARACTER') {
+                toastr.warning(`Open "${character.name}" in the character panel first to change its primary lorebook.`);
+                return;
+            }
             console.error('[Lorebook Manager] Failed to unlink', error);
             toastr.error('Failed to remove binding.');
         }
     };
     document.addEventListener('click', onUnlinkClick, true);
+
+    // Live validation: Primary only works for the current character. When the
+    // selected character isn't current and Primary is chosen, show a warning
+    // and disable the Primary option.
+    const onSelectionChange = () => {
+        const charSel = document.getElementById('lmb_char_select');
+        const typeSel = document.getElementById('lmb_link_type');
+        const warn = document.getElementById('lmb_primary_warn');
+        if (!charSel || !typeSel) return;
+
+        const selectedOption = charSel.options[charSel.selectedIndex];
+        const isCurrent = selectedOption?.dataset?.current === '1';
+
+        const primaryOption = typeSel.querySelector('option[value="primary"]');
+        if (primaryOption) primaryOption.disabled = !isCurrent;
+
+        // If primary is selected but unavailable, fall back to auxiliary.
+        if (!isCurrent && typeSel.value === 'primary') {
+            typeSel.value = 'extra';
+        }
+
+        if (warn) {
+            warn.style.display = isCurrent ? 'none' : 'block';
+        }
+    };
+    const onPopupChange = (e) => {
+        if (e.target?.id === 'lmb_char_select' || e.target?.id === 'lmb_link_type') {
+            onSelectionChange();
+        }
+    };
+    document.addEventListener('change', onPopupChange, true);
+    // Run once on open to set the initial state.
+    setTimeout(onSelectionChange, 0);
 
     const result = await Popup.show.confirm(
         `Link: ${escapeHtml(record.displayName)}`,
@@ -3085,6 +3122,7 @@ async function openCharacterLinkPopup(apiName) {
     );
 
     document.removeEventListener('click', onUnlinkClick, true);
+    document.removeEventListener('change', onPopupChange, true);
 
     if (!result) return;
 
@@ -3104,6 +3142,11 @@ async function openCharacterLinkPopup(apiName) {
 
     try {
         if (selectedType === 'primary') {
+            // Primary linking only works for the current character.
+            if (!isCurrentCharacter(character)) {
+                toastr.warning(`Open "${character.name}" in the character panel first to set its primary lorebook, or use Auxiliary instead.`);
+                return;
+            }
             // Warn if character already has a different primary lorebook
             const currentPrimary = character.data?.extensions?.world;
             if (currentPrimary && currentPrimary.trim() && currentPrimary.trim() !== apiName) {
@@ -3129,6 +3172,10 @@ async function openCharacterLinkPopup(apiName) {
         syncActiveLorebooks();
         renderManager();
     } catch (error) {
+        if (error?.message === 'NOT_CURRENT_CHARACTER') {
+            toastr.warning(`Open "${character.name}" in the character panel first to change its primary lorebook.`);
+            return;
+        }
         console.error('[Lorebook Manager] Failed to link lorebook', error);
         toastr.error('Failed to link lorebook to character.');
     }
