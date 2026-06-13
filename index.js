@@ -22,6 +22,7 @@ import {
 
 import { Popup } from '../../../popup.js';
 import {
+    download,
     ensureImageFormatSupported,
     getBase64Async,
     getCharaFilename,
@@ -557,6 +558,7 @@ async function ensureManagerDom() {
         pageSize: modal.querySelector('#lmb_page_size'),
         newLorebook: modal.querySelector('#lmb_new_lorebook'),
         importLorebook: modal.querySelector('#lmb_import_lorebook'),
+        exportLorebook: modal.querySelector('#lmb_export_lorebook'),
         newFolder: modal.querySelector('#lmb_new_folder'),
         newSubfolder: modal.querySelector('#lmb_new_subfolder'),
         folderTree: modal.querySelector('#lmb_folder_tree'),
@@ -576,6 +578,7 @@ async function ensureManagerDom() {
         selectAll: modal.querySelector('#lmb_select_all'),
         deselectAll: modal.querySelector('#lmb_deselect_all'),
         bulkMove: modal.querySelector('#lmb_bulk_move'),
+        bulkExport: modal.querySelector('#lmb_bulk_export'),
         bulkDelete: modal.querySelector('#lmb_bulk_delete'),
         sidebarToggle: modal.querySelector('#lmb_sidebar_toggle'),
         sidebarToggleLabel: modal.querySelector('#lmb_sidebar_toggle_label'),
@@ -609,6 +612,7 @@ function bindManagerEvents() {
     state.dom.refresh.addEventListener('click', () => refreshLorebooks({ showLoader: true }));
     state.dom.newLorebook.addEventListener('click', onCreateLorebookClick);
     state.dom.importLorebook.addEventListener('click', () => state.dom.importInput.click());
+    state.dom.exportLorebook?.addEventListener('click', onToolbarExportClick);
     state.dom.newFolder.addEventListener('click', () => openCreateFolderPrompt(null));
     state.dom.newSubfolder.addEventListener('click', () => openCreateFolderPrompt(getSelectedRealFolderId()));
     state.dom.prevPage.addEventListener('click', () => setCurrentPage(state.currentPage - 1));
@@ -631,6 +635,7 @@ function bindManagerEvents() {
     state.dom.deselectAll?.addEventListener('click', onDeselectAllClick);
     state.dom.bulkDelete?.addEventListener('click', onBulkDeleteClick);
     state.dom.bulkMove?.addEventListener('click', onBulkMoveClick);
+    state.dom.bulkExport?.addEventListener('click', onBulkExportClick);
     state.dom.sidebarToggle?.addEventListener('click', onSidebarToggleClick);
 
     // Close the mobile sidebar overlay when tapping outside of it.
@@ -1379,6 +1384,221 @@ async function onImportInputChange(event) {
     if (imported.length === 1) {
         toastr.success(`Imported "${escapeHtml(imported[0].displayName)}".`);
     }
+}
+
+// ══════════════════════════════════════════════════════════════
+// FEATURE: EXPORT (single JSON + multi ZIP)
+// ══════════════════════════════════════════════════════════════
+
+// Toolbar "Export" button. Exports the current selection if any, otherwise
+// every lorebook visible on the current page.
+async function onToolbarExportClick() {
+    let targets = [...state.selectedBooks];
+
+    if (targets.length === 0) {
+        targets = getLorebooksOnCurrentPage(getVisibleLorebooks()).map(record => record.apiName);
+    }
+
+    if (targets.length === 0) {
+        toastr.info('There are no lorebooks to export.');
+        return;
+    }
+
+    await exportLorebooks(targets);
+}
+
+// Selection-bar "Export" button. Exports exactly the selected lorebooks.
+async function onBulkExportClick() {
+    const targets = [...state.selectedBooks];
+    if (targets.length === 0) return;
+    await exportLorebooks(targets);
+}
+
+// Sanitizes a lorebook name into a safe file name component.
+function sanitizeExportFileName(name) {
+    return String(name ?? 'lorebook')
+        .replace(/[\\/:*?"<>|]+/g, '_')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 120) || 'lorebook';
+}
+
+// Loads a lorebook and returns { fileName, json } using the exact native
+// SillyTavern world-info export shape (plain JSON.stringify of the data).
+async function buildLorebookExport(apiName) {
+    const data = await loadWorldInfo(apiName);
+    if (!data) {
+        return null;
+    }
+
+    const record = findLorebook(apiName);
+    const baseName = sanitizeExportFileName(record?.displayName || apiName);
+    return {
+        fileName: `${baseName}.json`,
+        json: JSON.stringify(data),
+    };
+}
+
+// Exports one or many lorebooks. A single book downloads as a .json file,
+// multiple books are bundled into a .zip archive.
+async function exportLorebooks(apiNames) {
+    const names = [...new Set(apiNames)].filter(Boolean);
+    if (names.length === 0) return;
+
+    try {
+        setLoading(true);
+
+        if (names.length === 1) {
+            const result = await buildLorebookExport(names[0]);
+            if (!result) {
+                toastr.error('Failed to load the lorebook for export.');
+                return;
+            }
+            download(result.json, result.fileName, 'application/json');
+            toastr.success(`Exported "${escapeHtml(result.fileName)}".`);
+            return;
+        }
+
+        const files = [];
+        const usedNames = new Set();
+        let failed = 0;
+
+        for (const apiName of names) {
+            const result = await buildLorebookExport(apiName);
+            if (!result) {
+                failed++;
+                continue;
+            }
+
+            // Guard against duplicate file names within the same archive.
+            let fileName = result.fileName;
+            if (usedNames.has(fileName)) {
+                const dot = fileName.lastIndexOf('.');
+                const stem = dot > 0 ? fileName.slice(0, dot) : fileName;
+                const ext = dot > 0 ? fileName.slice(dot) : '';
+                let i = 2;
+                while (usedNames.has(`${stem} (${i})${ext}`)) i++;
+                fileName = `${stem} (${i})${ext}`;
+            }
+            usedNames.add(fileName);
+            files.push({ name: fileName, content: result.json });
+        }
+
+        if (files.length === 0) {
+            toastr.error('Failed to export the selected lorebooks.');
+            return;
+        }
+
+        const stamp = new Date().toISOString().slice(0, 10);
+        const zipBlob = createZipBlob(files);
+        download(zipBlob, `lorebooks-${stamp}.zip`, 'application/zip');
+
+        if (failed > 0) {
+            toastr.warning(`Exported ${files.length} lorebook(s); ${failed} failed to load.`);
+        } else {
+            toastr.success(`Exported ${files.length} lorebooks as a .zip archive.`);
+        }
+    } catch (error) {
+        console.error('[Lorebook Manager] Export failed', error);
+        toastr.error('Failed to export lorebook(s).');
+    } finally {
+        setLoading(false);
+    }
+}
+
+// ── Minimal ZIP writer (STORE method, no external dependency) ──
+// Produces a standard, uncompressed ZIP archive. JSON text compresses poorly
+// enough that "store" is fine and keeps the implementation dependency-free.
+
+const CRC32_TABLE = (() => {
+    const table = new Uint32Array(256);
+    for (let n = 0; n < 256; n++) {
+        let c = n;
+        for (let k = 0; k < 8; k++) {
+            c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+        }
+        table[n] = c >>> 0;
+    }
+    return table;
+})();
+
+function crc32(bytes) {
+    let crc = 0xFFFFFFFF;
+    for (let i = 0; i < bytes.length; i++) {
+        crc = CRC32_TABLE[(crc ^ bytes[i]) & 0xFF] ^ (crc >>> 8);
+    }
+    return (crc ^ 0xFFFFFFFF) >>> 0;
+}
+
+// Builds a ZIP Blob from [{ name, content }] entries (content is a string).
+function createZipBlob(files) {
+    const encoder = new TextEncoder();
+    const fileParts = [];
+    const central = [];
+    let offset = 0;
+
+    const dosTime = 0;
+    const dosDate = 0x21; // 1980-01-01, a valid neutral timestamp.
+
+    for (const file of files) {
+        const nameBytes = encoder.encode(file.name);
+        const dataBytes = encoder.encode(file.content);
+        const crc = crc32(dataBytes);
+        const size = dataBytes.length;
+
+        const localHeader = new DataView(new ArrayBuffer(30));
+        localHeader.setUint32(0, 0x04034b50, true); // local file header signature
+        localHeader.setUint16(4, 20, true);          // version needed
+        localHeader.setUint16(6, 0x0800, true);      // flags: UTF-8 names
+        localHeader.setUint16(8, 0, true);           // compression: store
+        localHeader.setUint16(10, dosTime, true);
+        localHeader.setUint16(12, dosDate, true);
+        localHeader.setUint32(14, crc, true);
+        localHeader.setUint32(18, size, true);       // compressed size
+        localHeader.setUint32(22, size, true);       // uncompressed size
+        localHeader.setUint16(26, nameBytes.length, true);
+        localHeader.setUint16(28, 0, true);          // extra field length
+
+        fileParts.push(new Uint8Array(localHeader.buffer), nameBytes, dataBytes);
+
+        const centralHeader = new DataView(new ArrayBuffer(46));
+        centralHeader.setUint32(0, 0x02014b50, true); // central dir signature
+        centralHeader.setUint16(4, 20, true);          // version made by
+        centralHeader.setUint16(6, 20, true);          // version needed
+        centralHeader.setUint16(8, 0x0800, true);      // flags: UTF-8
+        centralHeader.setUint16(10, 0, true);          // compression: store
+        centralHeader.setUint16(12, dosTime, true);
+        centralHeader.setUint16(14, dosDate, true);
+        centralHeader.setUint32(16, crc, true);
+        centralHeader.setUint32(20, size, true);
+        centralHeader.setUint32(24, size, true);
+        centralHeader.setUint16(28, nameBytes.length, true);
+        centralHeader.setUint16(30, 0, true);          // extra field length
+        centralHeader.setUint16(32, 0, true);          // comment length
+        centralHeader.setUint16(34, 0, true);          // disk number start
+        centralHeader.setUint16(36, 0, true);          // internal attrs
+        centralHeader.setUint32(38, 0, true);          // external attrs
+        centralHeader.setUint32(42, offset, true);     // local header offset
+
+        central.push(new Uint8Array(centralHeader.buffer), nameBytes);
+
+        offset += 30 + nameBytes.length + size;
+    }
+
+    const centralSize = central.reduce((sum, part) => sum + part.length, 0);
+    const centralOffset = offset;
+
+    const end = new DataView(new ArrayBuffer(22));
+    end.setUint32(0, 0x06054b50, true);          // end of central dir signature
+    end.setUint16(4, 0, true);                    // disk number
+    end.setUint16(6, 0, true);                    // disk with central dir
+    end.setUint16(8, files.length, true);         // entries on this disk
+    end.setUint16(10, files.length, true);        // total entries
+    end.setUint32(12, centralSize, true);
+    end.setUint32(16, centralOffset, true);
+    end.setUint16(20, 0, true);                   // comment length
+
+    return new Blob([...fileParts, ...central, new Uint8Array(end.buffer)], { type: 'application/zip' });
 }
 
 async function onCoverInputChange(event) {

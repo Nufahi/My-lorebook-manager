@@ -31,6 +31,7 @@ The original extension by **[ayvencore](https://github.com/ayvencore)** provides
 
 ### New in This Fork
 - **Multi-Select Mode** — select multiple lorebooks with checkboxes and perform bulk actions (delete, move to folder)
+- **Export** — export lorebooks straight from the manager: a single book downloads as `.json`, while multiple selected books are bundled into a `.zip` archive (file format matches SillyTavern's native export, so they re-import cleanly)
 - **Quick Activate/Deactivate** — toggle lorebook active state directly from the card without opening it
 - **Tag System** — create, assign, and filter lorebooks by custom tags; tags show as chips on cards
 - **Statistics Popup** — view detailed stats for any lorebook (entries, tokens, keywords, file size, and more)
