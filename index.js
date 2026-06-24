@@ -2857,6 +2857,14 @@ function hijackWorldInfoDrawer() {
             const settings = getManagerSettings();
             if (!settings.openManagerOnDrawer) return;
 
+            // If the manager is already open, a repeat click should close it.
+            if (state.isOpen) {
+                e.stopImmediatePropagation();
+                e.preventDefault();
+                closeManager();
+                return;
+            }
+
             // Only hijack if drawer is currently closed (= user wants to open it)
             const drawer = document.getElementById('WorldInfo');
             const isClosed = drawer?.classList.contains('closedDrawer');
@@ -2881,9 +2889,40 @@ function hijackWorldInfoDrawer() {
 
             e.stopImmediatePropagation();
             e.preventDefault();
-            openManager();
+
+            // Toggle: a repeat click on the WI nav button closes the manager.
+            if (state.isOpen) {
+                closeManager();
+            } else {
+                openManager();
+            }
         }, true);
     }
+
+    // Method 3: Close the manager when any *other* top-bar drawer button is
+    // clicked (e.g. user opens Extensions, Persona, AI Response Config, …).
+    bindTopBarCloseHandlers();
+}
+
+// When the manager is open and the user clicks a different top-bar drawer
+// icon, close the manager so it doesn't stay floating over the new panel.
+function bindTopBarCloseHandlers() {
+    const topBar = document.getElementById('top-settings-holder');
+    if (!topBar || topBar.dataset.lmbTopBarBound) return;
+    topBar.dataset.lmbTopBarBound = 'true';
+
+    topBar.addEventListener('click', (e) => {
+        if (!state.isOpen) return;
+
+        // The World Info icon has its own dedicated handler above.
+        if (e.target.closest('#WIDrawerIcon')) return;
+
+        // Only react to actual drawer/menu buttons in the top bar.
+        const button = e.target.closest('.drawer-icon, .drawer-toggle');
+        if (!button) return;
+
+        closeManager();
+    }, true); // capture phase, before ST opens the other drawer
 }
 
 
