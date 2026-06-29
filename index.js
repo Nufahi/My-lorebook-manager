@@ -420,18 +420,12 @@ function getLorebookMetaFromData(data) {
     return normalizeLorebookMeta(data.extensions[LOREBOOK_META_KEY]);
 }
 
-function toClientImagePath(path, version) {
+function toClientImagePath(path) {
     if (!path) {
         return '';
     }
 
-    const clean = `/${String(path).replace(/^[\\/]+/, '').replace(/\\/g, '/')}`;
-    const token = Number(version);
-    if (Number.isFinite(token) && token > 0) {
-        return `${clean}?v=${Math.floor(token)}`;
-    }
-
-    return clean;
+    return `/${String(path).replace(/^[\\/]+/, '').replace(/\\/g, '/')}`;
 }
 
 function findLorebook(apiName) {
@@ -608,10 +602,14 @@ async function ensureManagerDom() {
 
 function bindManagerEvents() {
     state.dom.modal.addEventListener('click', onModalClick);
+    let searchDebounce = 0;
     state.dom.search.addEventListener('input', () => {
         state.search = state.dom.search.value;
         state.currentPage = 1;
-        renderManager();
+        // Debounce so a full filter+sort+grid rebuild doesn't run on every
+        // keystroke; keeps typing smooth on large lorebook collections.
+        clearTimeout(searchDebounce);
+        searchDebounce = setTimeout(renderManager, 120);
     });
     state.dom.sort.addEventListener('change', () => {
         state.sort = state.dom.sort.value;
@@ -799,26 +797,47 @@ async function refreshLorebooks({ showLoader = false } = {}) {
     }
 }
 
-async function hydrateEntryCounts(lorebooks, refreshToken) {
-    const updates = await Promise.all(lorebooks.map(async (record) => {
-        try {
-            const data = await loadWorldInfo(record.apiName);
-            return [record.apiName, getLorebookEntryCount(data)];
-        } catch (error) {
-            console.warn(`[Lorebook Manager] Failed to load lorebook "${record.apiName}" for count`, error);
-            return [record.apiName, null];
-        }
-    }));
+// Cap how many lorebook files we load at once. Each loadWorldInfo() pulls the
+// full WI file from the server; firing them all in parallel (a user can easily
+// have 100+ lorebooks) creates a request burst that can stall SillyTavern and
+// the backend. A small pool keeps things responsive without blocking the UI.
+const ENTRY_COUNT_CONCURRENCY = 6;
 
-    if (refreshToken !== state.refreshToken) {
-        return;
+async function hydrateEntryCounts(lorebooks, refreshToken) {
+    const queue = [...lorebooks];
+    let touched = false;
+
+    async function worker() {
+        while (queue.length) {
+            // Abort the whole hydration if a newer refresh superseded this one.
+            if (refreshToken !== state.refreshToken) {
+                return;
+            }
+
+            const record = queue.shift();
+            if (!record) {
+                return;
+            }
+
+            try {
+                const data = await loadWorldInfo(record.apiName);
+                if (refreshToken !== state.refreshToken) {
+                    return;
+                }
+                state.entryCounts[record.apiName] = getLorebookEntryCount(data);
+                touched = true;
+            } catch (error) {
+                console.warn(`[Lorebook Manager] Failed to load lorebook "${record.apiName}" for count`, error);
+            }
+        }
     }
 
-    updates.forEach(([apiName, entryCount]) => {
-        if (typeof entryCount === 'number') {
-            state.entryCounts[apiName] = entryCount;
-        }
-    });
+    const workerCount = Math.min(ENTRY_COUNT_CONCURRENCY, queue.length);
+    await Promise.all(Array.from({ length: workerCount }, () => worker()));
+
+    if (refreshToken !== state.refreshToken || !touched) {
+        return;
+    }
 
     state.lorebooks = state.lorebooks.map(record => ({
         ...record,
@@ -1127,7 +1146,7 @@ function createLorebookCard(record, { folderOptions, globalLorebooks }) {
     cover.title = `Open ${record.displayName}`;
     if (record.coverPath) {
         const image = document.createElement('img');
-        image.src = toClientImagePath(record.coverPath, record.coverVersion);
+        image.src = toClientImagePath(record.coverPath);
         image.alt = `${record.displayName} cover`;
         cover.appendChild(image);
     }
@@ -1638,12 +1657,16 @@ async function onCoverInputChange(event) {
         const extension = getFileExtension(normalizedFile);
         const stableId = await ensureStableLorebookId(apiName);
         const previousCoverPath = findLorebook(apiName)?.coverPath || '';
-        const coverPath = await saveBase64AsFile(base64, IMAGE_SUBFOLDER, `${stableId}-cover`, extension);
+        // Encode a version into the FILE NAME (not a ?v= query param). Static
+        // image serving can choke on query strings, and reusing the same name
+        // makes the browser serve the stale cached image. A fresh unique name
+        // sidesteps both: the path always points at a real, new file.
         const coverVersion = Date.now();
+        const coverPath = await saveBase64AsFile(base64, IMAGE_SUBFOLDER, `${stableId}-cover-${coverVersion}`, extension);
         const meta = await mutateLorebookMeta(apiName, current => ({ ...current, coverPath, coverVersion }));
 
-        // If the new cover landed at a different path (e.g. a different file
-        // extension), the old file is now orphaned on disk — clean it up.
+        // The new cover always lands at a fresh path (unique name), so the old
+        // file is now orphaned on disk — clean it up to avoid leftover images.
         if (previousCoverPath && previousCoverPath !== coverPath) {
             try {
                 await deleteCoverAsset(previousCoverPath);
@@ -2163,6 +2186,7 @@ function scheduleToolbarSync() {
         state.toolbarSyncFrame = 0;
         injectManagerButton();
         startWorldListObserver();
+        hijackWorldInfoDrawer();
     });
 }
 
@@ -2241,19 +2265,23 @@ function startButtonObserver() {
         return;
     }
 
+    // The callback is fully coalesced through scheduleToolbarSync (a single
+    // rAF). hijackWorldInfoDrawer is cheap and idempotent (guarded by
+    // dataset flags), but we still route it through the same rAF so a burst of
+    // mutations never triggers it synchronously hundreds of times.
     state.buttonObserver = new MutationObserver(() => {
         scheduleToolbarSync();
-        hijackWorldInfoDrawer();
     });
 
-    // Watch only the regions that actually host the WI drawer / popup / nav,
-    // instead of the entire body. This avoids firing on every chat message.
+    // Watch only the regions that actually host the WI drawer / popup / nav.
+    // Deliberately NOT watching #sheld (the chat message container): it mutates
+    // on every streamed token, which would fire this observer thousands of
+    // times during a single AI response and slow SillyTavern down.
     const targets = [
         document.getElementById('WorldInfo'),
         document.getElementById('world_popup'),
         document.getElementById('top-settings-holder'),
         document.getElementById('right-nav-panel'),
-        document.getElementById('sheld'),
     ].filter(node => node instanceof HTMLElement);
 
     if (targets.length === 0) {
