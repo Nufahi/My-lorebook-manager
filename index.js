@@ -364,6 +364,16 @@ function normalizeLorebookMeta(rawMeta) {
         }
     }
 
+    // Cache-busting token bumped whenever the cover image is (re)uploaded.
+    // The file path stays identical across uploads with the same extension, so
+    // without this the browser keeps serving the previously cached image.
+    if (meta.coverPath) {
+        const rawVersion = Number(rawMeta.coverVersion);
+        if (Number.isFinite(rawVersion) && rawVersion > 0) {
+            meta.coverVersion = Math.floor(rawVersion);
+        }
+    }
+
     return meta;
 }
 
@@ -397,6 +407,7 @@ function normalizeLorebookRecord(item) {
         bookId: managerMeta.bookId || '',
         folderId: managerMeta.folderId || null,
         coverPath: managerMeta.coverPath || '',
+        coverVersion: managerMeta.coverVersion || 0,
         entryCount: Object.hasOwn(state.entryCounts, apiName) ? state.entryCounts[apiName] : null,
     };
 }
@@ -409,12 +420,18 @@ function getLorebookMetaFromData(data) {
     return normalizeLorebookMeta(data.extensions[LOREBOOK_META_KEY]);
 }
 
-function toClientImagePath(path) {
+function toClientImagePath(path, version) {
     if (!path) {
         return '';
     }
 
-    return `/${String(path).replace(/^[\\/]+/, '').replace(/\\/g, '/')}`;
+    const clean = `/${String(path).replace(/^[\\/]+/, '').replace(/\\/g, '/')}`;
+    const token = Number(version);
+    if (Number.isFinite(token) && token > 0) {
+        return `${clean}?v=${Math.floor(token)}`;
+    }
+
+    return clean;
 }
 
 function findLorebook(apiName) {
@@ -434,6 +451,7 @@ function applyLorebookMetaToState(apiName, meta) {
             bookId: normalized.bookId || '',
             folderId: normalized.folderId || null,
             coverPath: normalized.coverPath || '',
+            coverVersion: normalized.coverVersion || 0,
         };
     });
 
@@ -1109,7 +1127,7 @@ function createLorebookCard(record, { folderOptions, globalLorebooks }) {
     cover.title = `Open ${record.displayName}`;
     if (record.coverPath) {
         const image = document.createElement('img');
-        image.src = toClientImagePath(record.coverPath);
+        image.src = toClientImagePath(record.coverPath, record.coverVersion);
         image.alt = `${record.displayName} cover`;
         cover.appendChild(image);
     }
@@ -1619,8 +1637,21 @@ async function onCoverInputChange(event) {
         const base64 = dataUrl.split(',')[1];
         const extension = getFileExtension(normalizedFile);
         const stableId = await ensureStableLorebookId(apiName);
+        const previousCoverPath = findLorebook(apiName)?.coverPath || '';
         const coverPath = await saveBase64AsFile(base64, IMAGE_SUBFOLDER, `${stableId}-cover`, extension);
-        const meta = await mutateLorebookMeta(apiName, current => ({ ...current, coverPath }));
+        const coverVersion = Date.now();
+        const meta = await mutateLorebookMeta(apiName, current => ({ ...current, coverPath, coverVersion }));
+
+        // If the new cover landed at a different path (e.g. a different file
+        // extension), the old file is now orphaned on disk — clean it up.
+        if (previousCoverPath && previousCoverPath !== coverPath) {
+            try {
+                await deleteCoverAsset(previousCoverPath);
+            } catch (cleanupError) {
+                console.warn('[Lorebook Manager] Failed to delete previous cover asset', cleanupError);
+            }
+        }
+
         applyLorebookMetaToState(apiName, meta);
         renderManager();
         toastr.success('Lorebook cover updated.');
