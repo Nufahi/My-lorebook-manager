@@ -259,10 +259,10 @@ function toggleBookPinned(apiName) {
     const index = pinned.indexOf(apiName);
     if (index >= 0) {
         pinned.splice(index, 1);
-        toastr.info(`Unpinned "${escapeHtml(apiName)}".`);
+        toastr.info(`Unpinned "${apiName}".`);
     } else {
         pinned.push(apiName);
-        toastr.success(`Pinned "${escapeHtml(apiName)}".`);
+        toastr.success(`Pinned "${apiName}".`);
     }
     saveManagerSettings();
     renderManager();
@@ -460,10 +460,18 @@ function getSortableEntryCount(record, direction) {
     return direction === 'asc' ? Number.MAX_SAFE_INTEGER : -1;
 }
 
-function compareLorebooks(a, b) {
+// Builds a comparator with the pinned-set snapshotted once, so sorting a large
+// collection doesn't hit getManagerSettings()/Array.includes() on every single
+// comparison (O(n log n) settings lookups otherwise).
+function makeLorebookComparator() {
+    const pinnedSet = new Set(getPinnedBooks());
+    return (a, b) => compareLorebooks(a, b, pinnedSet);
+}
+
+function compareLorebooks(a, b, pinnedSet = null) {
     // Pinned items always float to the top regardless of sort order
-    const aPinned = isBookPinned(a.apiName) ? 0 : 1;
-    const bPinned = isBookPinned(b.apiName) ? 0 : 1;
+    const aPinned = (pinnedSet ? pinnedSet.has(a.apiName) : isBookPinned(a.apiName)) ? 0 : 1;
+    const bPinned = (pinnedSet ? pinnedSet.has(b.apiName) : isBookPinned(b.apiName)) ? 0 : 1;
     if (aPinned !== bPinned) return aPinned - bPinned;
 
     switch (state.sort) {
@@ -525,7 +533,7 @@ function getVisibleLorebooks() {
 
             return haystack.includes(searchTerm);
         })
-        .sort(compareLorebooks);
+        .sort(makeLorebookComparator());
 }
 
 function setLoading(isLoading) {
@@ -760,7 +768,10 @@ async function refreshLorebooks({ showLoader = false } = {}) {
         }
         const currentNames = new Set(lorebooks.map(r => r.apiName));
         for (const key of Object.keys(fsSettings.firstSeen)) {
-            if (!currentNames.has(key)) { delete fsSettings.firstSeen[key]; }
+            if (!currentNames.has(key)) {
+                delete fsSettings.firstSeen[key];
+                hasNewBooks = true; // reuse the "settings dirty" flag below
+            }
         }
 
         // Drop stale cached entry counts so the map doesn't grow unbounded.
@@ -803,9 +814,36 @@ async function refreshLorebooks({ showLoader = false } = {}) {
 // the backend. A small pool keeps things responsive without blocking the UI.
 const ENTRY_COUNT_CONCURRENCY = 6;
 
+// Throttle interval for progressive re-renders while counts stream in.
+const ENTRY_COUNT_RENDER_THROTTLE_MS = 350;
+
+function applyEntryCountsToState() {
+    state.lorebooks = state.lorebooks.map(record => ({
+        ...record,
+        entryCount: Object.hasOwn(state.entryCounts, record.apiName) ? state.entryCounts[record.apiName] : record.entryCount,
+    }));
+}
+
 async function hydrateEntryCounts(lorebooks, refreshToken) {
     const queue = [...lorebooks];
     let touched = false;
+    let lastRender = 0;
+
+    // Push freshly-loaded counts into the UI periodically so cards stop showing
+    // "Counting entries" as data arrives, instead of only after every file has
+    // loaded. Throttled to avoid re-rendering the whole grid on each response.
+    const maybeProgressiveRender = () => {
+        if (!state.isOpen || refreshToken !== state.refreshToken) {
+            return;
+        }
+        const now = Date.now();
+        if (now - lastRender < ENTRY_COUNT_RENDER_THROTTLE_MS) {
+            return;
+        }
+        lastRender = now;
+        applyEntryCountsToState();
+        renderManager();
+    };
 
     async function worker() {
         while (queue.length) {
@@ -826,6 +864,7 @@ async function hydrateEntryCounts(lorebooks, refreshToken) {
                 }
                 state.entryCounts[record.apiName] = getLorebookEntryCount(data);
                 touched = true;
+                maybeProgressiveRender();
             } catch (error) {
                 console.warn(`[Lorebook Manager] Failed to load lorebook "${record.apiName}" for count`, error);
             }
@@ -839,11 +878,7 @@ async function hydrateEntryCounts(lorebooks, refreshToken) {
         return;
     }
 
-    state.lorebooks = state.lorebooks.map(record => ({
-        ...record,
-        entryCount: Object.hasOwn(state.entryCounts, record.apiName) ? state.entryCounts[record.apiName] : record.entryCount,
-    }));
-
+    applyEntryCountsToState();
     renderManager();
 }
 
@@ -861,13 +896,17 @@ function renderManager() {
     }
 
     syncActiveLorebooks();
+    // Compute the filtered+sorted list once per render and share it with the
+    // grid and header instead of recomputing (filter+sort of the whole
+    // collection) two or three separate times.
+    const visibleLorebooks = getVisibleLorebooks();
     renderFolderTree();
-    renderLorebookGrid();
-    renderHeaderState();
+    renderLorebookGrid(visibleLorebooks);
+    renderHeaderState(visibleLorebooks);
     updateSelectUI();
 }
 
-function renderHeaderState() {
+function renderHeaderState(visibleLorebooks = getVisibleLorebooks()) {
     if (!state.dom.breadcrumb || !state.dom.summary) {
         return;
     }
@@ -883,7 +922,7 @@ function renderHeaderState() {
             : folderLabel;
     }
 
-    const visible = getVisibleLorebooks().length;
+    const visible = visibleLorebooks.length;
     const totalPages = clampCurrentPage(visible);
     state.dom.summary.textContent = `${visible} shown / ${state.lorebooks.length} total`;
     state.dom.newSubfolder.disabled = !Boolean(getSelectedRealFolderId());
@@ -962,8 +1001,17 @@ function renderFolderTree() {
             tree.appendChild(clearRow);
         }
 
+        // Count all tags in a single pass over the lorebooks instead of a full
+        // scan per tag (was O(tags × books) on every folder-tree render).
+        const tagCounts = new Map();
+        for (const record of state.lorebooks) {
+            for (const tag of getLorebookTags(record.apiName)) {
+                tagCounts.set(tag, (tagCounts.get(tag) || 0) + 1);
+            }
+        }
+
         tagList.forEach(tag => {
-            const count = state.lorebooks.filter(r => getLorebookTags(r.apiName).includes(tag)).length;
+            const count = tagCounts.get(tag) || 0;
             const row = createVirtualFolderRow({
                 id: '__tag__' + tag,
                 label: tag,
@@ -1101,13 +1149,12 @@ function createFolderToolButton(action, folderId, title, iconClass) {
     return button;
 }
 
-function renderLorebookGrid() {
+function renderLorebookGrid(visibleLorebooks = getVisibleLorebooks()) {
     const grid = state.dom.grid;
     if (!grid) {
         return;
     }
 
-    const visibleLorebooks = getVisibleLorebooks();
     const visibleOnPage = getLorebooksOnCurrentPage(visibleLorebooks);
     const folderOptions = buildFolderOptions();
     const globalLorebooks = new Set(selected_world_info);
@@ -1396,7 +1443,7 @@ async function onCreateLorebookClick() {
     }
 
     await refreshLorebooks({ showLoader: false });
-    toastr.success(`Lorebook "${escapeHtml(finalName)}" created.`);
+    toastr.success(`Lorebook "${finalName}" created.`);
 }
 
 async function onImportInputChange(event) {
@@ -1419,7 +1466,7 @@ async function onImportInputChange(event) {
     }
 
     if (imported.length === 1) {
-        toastr.success(`Imported "${escapeHtml(imported[0].displayName)}".`);
+        toastr.success(`Imported "${imported[0].displayName}".`);
     }
 }
 
@@ -1492,7 +1539,7 @@ async function exportLorebooks(apiNames) {
                 return;
             }
             download(result.json, result.fileName, 'application/json');
-            toastr.success(`Exported "${escapeHtml(result.fileName)}".`);
+            toastr.success(`Exported "${result.fileName}".`);
             return;
         }
 
@@ -1785,14 +1832,49 @@ async function toggleLorebookActive(apiName) {
     const index = selected_world_info.indexOf(apiName);
     if (index >= 0) {
         selected_world_info.splice(index, 1);
-        toastr.info(`Deactivated "${escapeHtml(apiName)}".`);
+        toastr.info(`Deactivated "${apiName}".`);
     } else {
         selected_world_info.push(apiName);
-        toastr.success(`Activated "${escapeHtml(apiName)}".`);
+        toastr.success(`Activated "${apiName}".`);
     }
+
+    // Keep SillyTavern's native global World Info multiselect (#world_info) in
+    // sync so the drawer reflects the change without a reload. Options are keyed
+    // by index (value) but carry the book name as their text.
+    syncNativeWorldInfoSelect();
+
     getContext().saveSettingsDebounced();
+
+    // Notify ST and other extensions that the active world info set changed.
+    const context = getContext();
+    context.eventSource?.emit?.(context.eventTypes.WORLDINFO_SETTINGS_UPDATED);
+
     syncActiveLorebooks();
     renderManager();
+}
+
+// Reflect the current `selected_world_info` array onto the native #world_info
+// multiselect's <option> selected state.
+function syncNativeWorldInfoSelect() {
+    const select = document.getElementById('world_info');
+    if (!(select instanceof HTMLSelectElement)) {
+        return;
+    }
+
+    const activeNames = new Set(selected_world_info);
+    let changed = false;
+    for (const option of select.options) {
+        const shouldSelect = activeNames.has(option.textContent?.trim());
+        if (option.selected !== shouldSelect) {
+            option.selected = shouldSelect;
+            changed = true;
+        }
+    }
+
+    if (changed) {
+        // jQuery-based selects (select2) need a change event to re-render.
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+    }
 }
 
 async function onLorebookGridClick(event) {
@@ -2051,6 +2133,9 @@ async function _mutateLorebookMetaImmediate(apiName, updater) {
         bookId: existing.bookId || getContext().uuidv4(),
         folderId: existing.folderId || '',
         coverPath: existing.coverPath || '',
+        // Preserve the cover cache-busting version across unrelated mutations
+        // (e.g. moving to a folder) so the cover image isn't silently dropped.
+        coverVersion: existing.coverVersion || 0,
     };
 
     const next = updater ? updater({ ...draft }) : draft;
@@ -2148,7 +2233,7 @@ async function deleteLorebookWithCover(apiName) {
     state.selectedBooks.delete(apiName);
 
     await refreshLorebooks({ showLoader: false });
-    toastr.success(`Deleted "${escapeHtml(record.displayName)}".`);
+    toastr.success(`Deleted "${record.displayName}".`);
 }
 
 function scheduleRefresh(delay = 120) {
@@ -2576,7 +2661,7 @@ async function onBulkMoveClick() {
 
     const html = `
         <div style="margin: 8px 0;">
-            <label style="display:block; margin-bottom:6px;">Move ${escapeHtml(count)} lorebook(s) to:</label>
+            <label style="display:block; margin-bottom:6px;">Move ${count} lorebook(s) to:</label>
             <select id="lmb_bulk_folder_target" class="text_pole" style="width:100%;">
                 <option value="">No Folder</option>
                 ${optionsHtml}
@@ -2584,11 +2669,27 @@ async function onBulkMoveClick() {
         </div>
     `;
 
-    const result = await Popup.show.confirm('Move lorebooks', html);
+    // Capture the selected folder live: the popup DOM is torn down (after its
+    // close animation) before Popup.show.confirm() resolves, so reading the
+    // <select> afterwards can return null and silently move everything to
+    // "No Folder". Track the value through a change listener instead.
+    let selectedFolderId = '';
+    const onBulkFolderChange = (e) => {
+        if (e.target?.id === 'lmb_bulk_folder_target') {
+            selectedFolderId = e.target.value;
+        }
+    };
+    document.addEventListener('change', onBulkFolderChange, true);
+
+    let result;
+    try {
+        result = await Popup.show.confirm('Move lorebooks', html);
+    } finally {
+        document.removeEventListener('change', onBulkFolderChange, true);
+    }
     if (!result) return;
 
-    const targetSelect = document.getElementById('lmb_bulk_folder_target');
-    const folderId = targetSelect?.value || null;
+    const folderId = selectedFolderId || null;
 
     const toMove = [...state.selectedBooks];
     for (const apiName of toMove) {
@@ -2599,7 +2700,7 @@ async function onBulkMoveClick() {
     renderManager();
 
     const label = folderId ? getFolderPathLabel(folderId) : 'No Folder';
-    toastr.success(`Moved ${toMove.length} lorebook(s) to ${escapeHtml(label)}.`);
+    toastr.success(`Moved ${toMove.length} lorebook(s) to ${label}.`);
 }
 
 // ── Sidebar toggle (mobile) ──
@@ -3015,9 +3116,12 @@ async function duplicateLorebook(apiName) {
             return;
         }
 
-        const created = await createNewWorldInfo(newName.trim(), { interactive: false });
+        // interactive:true lets SillyTavern show its own "overwrite?" dialog if
+        // a lorebook with this name already exists, instead of silently failing.
+        const created = await createNewWorldInfo(newName.trim(), { interactive: true });
         if (!created) {
-            toastr.error('Failed to create the new lorebook.');
+            // User cancelled the overwrite prompt or creation failed; ST already
+            // surfaced its own toast, so stay quiet here.
             return;
         }
 
@@ -3058,7 +3162,7 @@ async function duplicateLorebook(apiName) {
         }
 
         await refreshLorebooks({ showLoader: false });
-        toastr.success(`Duplicated "${escapeHtml(record.displayName)}" → "${escapeHtml(newName.trim())}".`);
+        toastr.success(`Duplicated "${record.displayName}" → "${newName.trim()}".`);
     } catch (error) {
         console.error('[Lorebook Manager] Duplicate failed', error);
         toastr.error('Failed to duplicate the lorebook.');
@@ -3395,21 +3499,21 @@ async function openCharacterLinkPopup(apiName) {
         try {
             if (linkType === 'primary') {
                 if (!isCurrentCharacter(character)) {
-                    toastr.warning(`Open "${escapeHtml(character.name)}" in the character panel first to remove its primary lorebook.`);
+                    toastr.warning(`Open "${character.name}" in the character panel first to remove its primary lorebook.`);
                     return;
                 }
                 await setCharacterPrimaryLorebook(character, '');
-                toastr.success(`Removed primary lorebook from "${escapeHtml(character.name)}".`);
+                toastr.success(`Removed primary lorebook from "${character.name}".`);
             } else {
                 removeCharacterExtraLorebook(character, apiName);
-                toastr.success(`Removed auxiliary lorebook from "${escapeHtml(character.name)}".`);
+                toastr.success(`Removed auxiliary lorebook from "${character.name}".`);
             }
             btn.closest('.lmb_char_link_row')?.remove();
             syncActiveLorebooks();
             renderManager();
         } catch (error) {
             if (error?.message === 'NOT_CURRENT_CHARACTER') {
-                toastr.warning(`Open "${escapeHtml(character.name)}" in the character panel first to change its primary lorebook.`);
+                toastr.warning(`Open "${character.name}" in the character panel first to change its primary lorebook.`);
                 return;
             }
             console.error('[Lorebook Manager] Failed to unlink', error);
@@ -3499,7 +3603,7 @@ async function openCharacterLinkPopup(apiName) {
         if (selectedType === 'primary') {
             // Primary linking only works for the current character.
             if (!isCurrentCharacter(character)) {
-                toastr.warning(`Open "${escapeHtml(character.name)}" in the character panel first to set its primary lorebook, or use Auxiliary instead.`);
+                toastr.warning(`Open "${character.name}" in the character panel first to set its primary lorebook, or use Auxiliary instead.`);
                 return;
             }
             // Warn if character already has a different primary lorebook
@@ -3512,23 +3616,23 @@ async function openCharacterLinkPopup(apiName) {
                 if (!overwrite) return;
             }
             await setCharacterPrimaryLorebook(character, apiName);
-            toastr.success(`Set "${escapeHtml(record.displayName)}" as primary lorebook for "${escapeHtml(character.name)}".`);
+            toastr.success(`Set "${record.displayName}" as primary lorebook for "${character.name}".`);
         } else {
             // Check if already linked
             const extras = getCharacterExtraLorebooks(character);
             if (extras.includes(apiName)) {
-                toastr.info(`"${escapeHtml(record.displayName)}" is already an auxiliary lorebook for "${escapeHtml(character.name)}".`);
+                toastr.info(`"${record.displayName}" is already an auxiliary lorebook for "${character.name}".`);
                 return;
             }
             addCharacterExtraLorebook(character, apiName);
-            toastr.success(`Added "${escapeHtml(record.displayName)}" as auxiliary lorebook for "${escapeHtml(character.name)}".`);
+            toastr.success(`Added "${record.displayName}" as auxiliary lorebook for "${character.name}".`);
         }
 
         syncActiveLorebooks();
         renderManager();
     } catch (error) {
         if (error?.message === 'NOT_CURRENT_CHARACTER') {
-            toastr.warning(`Open "${escapeHtml(character.name)}" in the character panel first to change its primary lorebook.`);
+            toastr.warning(`Open "${character.name}" in the character panel first to change its primary lorebook.`);
             return;
         }
         console.error('[Lorebook Manager] Failed to link lorebook', error);
@@ -3671,7 +3775,7 @@ document.addEventListener('click', async (e) => {
             container.appendChild(row);
         }
         input.value = '';
-        toastr.success(`Tag "${escapeHtml(name)}" added.`);
+        toastr.success(`Tag "${name}" added.`);
         return;
     }
 
@@ -3691,7 +3795,7 @@ document.addEventListener('click', async (e) => {
         if (container && !container.querySelector('.lmb_tag_row')) {
             container.innerHTML = '<p style="opacity:0.6">No tags created yet. Add one below!</p>';
         }
-        toastr.info(`Tag "${escapeHtml(tagName)}" deleted.`);
+        toastr.info(`Tag "${tagName}" deleted.`);
     }
 });
 
