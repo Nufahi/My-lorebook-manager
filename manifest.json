@@ -3,7 +3,7 @@
     "loading_order": 100,
     "js": "index.js",
     "css": "style.css",
-    "author": "Codex and Ayvencore",
+    "author": "Nufahi",
     "version": "0.9.7",
     "homePage": "https://github.com/Nufahi/My-lorebook-manager",
     "auto_update": true
