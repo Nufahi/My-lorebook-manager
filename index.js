@@ -32,6 +32,8 @@ import {
 const MODULE_SETTINGS_KEY = 'lorebookManager';
 const LOREBOOK_META_KEY = 'lorebook_manager';
 const IMAGE_SUBFOLDER = 'lorebook-manager';
+const LOREBOOK_LIST_TIMEOUT_MS = 15000;
+const ENTRY_COUNT_TIMEOUT_MS = 15000;
 const SPECIAL_FOLDERS = Object.freeze({
     ALL: '__all__',
     ACTIVE: '__active__',
@@ -61,8 +63,11 @@ const state = {
     initialized: false,
     isOpen: false,
     isLoading: false,
+    loadingCount: 0,
+    isImporting: false,
     lorebooks: [],
     entryCounts: {},
+    entryCountErrors: new Set(),
     activeFolderId: SPECIAL_FOLDERS.ALL,
     search: '',
     sort: DEFAULT_SETTINGS.sort,
@@ -70,6 +75,7 @@ const state = {
     currentPage: 1,
     pendingCoverTarget: '',
     refreshToken: 0,
+    refreshController: null,
     refreshTimer: null,
     activeLorebookNames: new Set(),
     selectedBooks: new Set(),
@@ -79,6 +85,8 @@ const state = {
     worldListElement: null,
     toolbarSyncFrame: 0,
     activeTagFilter: null,
+    domPromise: null,
+    openPromise: null,
 };
 
 const EXTENSION_NAME = (() => {
@@ -537,13 +545,14 @@ function getVisibleLorebooks() {
 }
 
 function setLoading(isLoading) {
-    state.isLoading = isLoading;
+    state.loadingCount = Math.max(0, state.loadingCount + (isLoading ? 1 : -1));
+    state.isLoading = state.loadingCount > 0;
 
     if (!state.dom.loading) {
         return;
     }
 
-    state.dom.loading.classList.toggle('lmb_hidden', !isLoading);
+    state.dom.loading.classList.toggle('lmb_hidden', !state.isLoading);
 }
 
 function setEmptyMessage(message = '') {
@@ -560,52 +569,64 @@ async function ensureManagerDom() {
         return;
     }
 
-    const host = document.createElement('div');
-    host.innerHTML = await renderExtensionTemplateAsync(EXTENSION_NAME, 'manager');
-
-    const modal = host.firstElementChild;
-    if (!modal) {
-        throw new Error('Failed to render Lorebook Manager template');
+    if (state.domPromise) {
+        return state.domPromise;
     }
 
-    document.body.appendChild(modal);
+    state.domPromise = (async () => {
+        const host = document.createElement('div');
+        host.innerHTML = await renderExtensionTemplateAsync(EXTENSION_NAME, 'manager');
 
-    state.dom = {
-        modal,
-        refresh: modal.querySelector('#lmb_refresh'),
-        search: modal.querySelector('#lmb_search'),
-        sort: modal.querySelector('#lmb_sort'),
-        pageSize: modal.querySelector('#lmb_page_size'),
-        newLorebook: modal.querySelector('#lmb_new_lorebook'),
-        importLorebook: modal.querySelector('#lmb_import_lorebook'),
-        exportLorebook: modal.querySelector('#lmb_export_lorebook'),
-        newFolder: modal.querySelector('#lmb_new_folder'),
-        newSubfolder: modal.querySelector('#lmb_new_subfolder'),
-        folderTree: modal.querySelector('#lmb_folder_tree'),
-        breadcrumb: modal.querySelector('#lmb_breadcrumb'),
-        summary: modal.querySelector('#lmb_summary'),
-        pageControls: modal.querySelector('#lmb_page_controls'),
-        pageLabel: modal.querySelector('#lmb_page_label'),
-        prevPage: modal.querySelector('#lmb_prev_page'),
-        nextPage: modal.querySelector('#lmb_next_page'),
-        loading: modal.querySelector('#lmb_loading'),
-        empty: modal.querySelector('#lmb_empty'),
-        grid: modal.querySelector('#lmb_grid'),
-        coverInput: modal.querySelector('#lmb_cover_input'),
-        importInput: modal.querySelector('#lmb_import_input'),
-        selectBar: modal.querySelector('#lmb_select_bar'),
-        selectCount: modal.querySelector('#lmb_select_count'),
-        selectAll: modal.querySelector('#lmb_select_all'),
-        deselectAll: modal.querySelector('#lmb_deselect_all'),
-        bulkMove: modal.querySelector('#lmb_bulk_move'),
-        bulkExport: modal.querySelector('#lmb_bulk_export'),
-        bulkDelete: modal.querySelector('#lmb_bulk_delete'),
-        sidebarToggle: modal.querySelector('#lmb_sidebar_toggle'),
-        sidebarToggleLabel: modal.querySelector('#lmb_sidebar_toggle_label'),
-        sidebar: modal.querySelector('#lmb_sidebar'),
-    };
+        const modal = host.firstElementChild;
+        if (!modal) {
+            throw new Error('Failed to render Lorebook Manager template');
+        }
 
-    bindManagerEvents();
+        document.body.appendChild(modal);
+
+        state.dom = {
+            modal,
+            refresh: modal.querySelector('#lmb_refresh'),
+            search: modal.querySelector('#lmb_search'),
+            sort: modal.querySelector('#lmb_sort'),
+            pageSize: modal.querySelector('#lmb_page_size'),
+            newLorebook: modal.querySelector('#lmb_new_lorebook'),
+            importLorebook: modal.querySelector('#lmb_import_lorebook'),
+            exportLorebook: modal.querySelector('#lmb_export_lorebook'),
+            newFolder: modal.querySelector('#lmb_new_folder'),
+            newSubfolder: modal.querySelector('#lmb_new_subfolder'),
+            folderTree: modal.querySelector('#lmb_folder_tree'),
+            breadcrumb: modal.querySelector('#lmb_breadcrumb'),
+            summary: modal.querySelector('#lmb_summary'),
+            pageControls: modal.querySelector('#lmb_page_controls'),
+            pageLabel: modal.querySelector('#lmb_page_label'),
+            prevPage: modal.querySelector('#lmb_prev_page'),
+            nextPage: modal.querySelector('#lmb_next_page'),
+            loading: modal.querySelector('#lmb_loading'),
+            empty: modal.querySelector('#lmb_empty'),
+            grid: modal.querySelector('#lmb_grid'),
+            coverInput: modal.querySelector('#lmb_cover_input'),
+            importInput: modal.querySelector('#lmb_import_input'),
+            selectBar: modal.querySelector('#lmb_select_bar'),
+            selectCount: modal.querySelector('#lmb_select_count'),
+            selectAll: modal.querySelector('#lmb_select_all'),
+            deselectAll: modal.querySelector('#lmb_deselect_all'),
+            bulkMove: modal.querySelector('#lmb_bulk_move'),
+            bulkExport: modal.querySelector('#lmb_bulk_export'),
+            bulkDelete: modal.querySelector('#lmb_bulk_delete'),
+            sidebarToggle: modal.querySelector('#lmb_sidebar_toggle'),
+            sidebarToggleLabel: modal.querySelector('#lmb_sidebar_toggle_label'),
+            sidebar: modal.querySelector('#lmb_sidebar'),
+        };
+
+        bindManagerEvents();
+    })();
+
+    try {
+        await state.domPromise;
+    } finally {
+        state.domPromise = null;
+    }
 }
 
 function bindManagerEvents() {
@@ -692,16 +713,31 @@ function onModalClick(event) {
 }
 
 async function openManager() {
-    await ensureManagerDom();
-    collapseWorldInfoDrawer();
+    if (state.openPromise) {
+        return state.openPromise;
+    }
 
-    state.isOpen = true;
-    state.dom.modal.classList.remove('lmb_hidden');
-    state.dom.search.value = state.search;
-    state.dom.sort.value = state.sort;
-    state.dom.pageSize.value = String(state.pageSize);
+    state.openPromise = (async () => {
+        try {
+            await ensureManagerDom();
+            collapseWorldInfoDrawer();
 
-    await refreshLorebooks({ showLoader: true });
+            state.isOpen = true;
+            state.dom.modal.classList.remove('lmb_hidden');
+            state.dom.search.value = state.search;
+            state.dom.sort.value = state.sort;
+            state.dom.pageSize.value = String(state.pageSize);
+
+            await refreshLorebooks({ showLoader: true });
+        } catch (error) {
+            console.error('[Lorebook Manager] Failed to open manager', error);
+            toastr.error('Failed to open the Lorebook Manager.');
+        } finally {
+            state.openPromise = null;
+        }
+    })();
+
+    return state.openPromise;
 }
 
 function closeManager() {
@@ -723,11 +759,12 @@ function getSelectedRealFolderId() {
     return isRealFolderId(state.activeFolderId) ? state.activeFolderId : null;
 }
 
-async function fetchLorebookList() {
+async function fetchLorebookList(signal) {
     const response = await fetch('/api/worldinfo/list', {
         method: 'POST',
         headers: getContext().getRequestHeaders(),
         body: JSON.stringify({}),
+        signal,
     });
 
     if (!response.ok) {
@@ -739,14 +776,25 @@ async function fetchLorebookList() {
 }
 
 async function refreshLorebooks({ showLoader = false } = {}) {
+    clearTimeout(state.refreshTimer);
+    state.refreshTimer = null;
     const refreshToken = ++state.refreshToken;
+    state.refreshController?.abort();
+    const controller = new AbortController();
+    state.refreshController = controller;
+    let timedOut = false;
+    const timeoutId = setTimeout(() => {
+        timedOut = true;
+        controller.abort();
+    }, LOREBOOK_LIST_TIMEOUT_MS);
+    let loaded = false;
 
     if (showLoader) {
         setLoading(true);
     }
 
     try {
-        const lorebooks = await fetchLorebookList();
+        const lorebooks = await fetchLorebookList(controller.signal);
 
         if (refreshToken !== state.refreshToken) {
             return;
@@ -780,6 +828,11 @@ async function refreshLorebooks({ showLoader = false } = {}) {
                 delete state.entryCounts[cachedName];
             }
         }
+        for (const failedName of state.entryCountErrors) {
+            if (!currentNames.has(failedName)) {
+                state.entryCountErrors.delete(failedName);
+            }
+        }
 
         if (hasNewBooks) { saveManagerSettings(); }
 
@@ -797,13 +850,26 @@ async function refreshLorebooks({ showLoader = false } = {}) {
         updateWorldToolbarButtons();
         renderManager();
         hydrateEntryCounts(lorebooks, refreshToken);
+        loaded = true;
+        return true;
     } catch (error) {
+        if (refreshToken !== state.refreshToken) {
+            return false;
+        }
         console.error('[Lorebook Manager] Failed to refresh lorebooks', error);
-        setEmptyMessage('Unable to load lorebooks right now.');
-        toastr.error('Failed to refresh the Lorebook Manager.');
+        setEmptyMessage(timedOut ? 'Loading timed out. Try refreshing again.' : 'Unable to load lorebooks right now.');
+        toastr.error(timedOut ? 'Lorebook loading timed out.' : 'Failed to refresh the Lorebook Manager.');
+        return false;
     } finally {
+        clearTimeout(timeoutId);
+        if (state.refreshController === controller) {
+            state.refreshController = null;
+        }
         if (showLoader) {
             setLoading(false);
+        }
+        if (loaded && refreshToken === state.refreshToken) {
+            renderManager();
         }
     }
 }
@@ -816,6 +882,14 @@ const ENTRY_COUNT_CONCURRENCY = 6;
 
 // Throttle interval for progressive re-renders while counts stream in.
 const ENTRY_COUNT_RENDER_THROTTLE_MS = 350;
+
+function withTimeout(promise, timeoutMs, message) {
+    let timeoutId;
+    const timeout = new Promise((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error(message)), timeoutMs);
+    });
+    return Promise.race([promise, timeout]).finally(() => clearTimeout(timeoutId));
+}
 
 function applyEntryCountsToState() {
     state.lorebooks = state.lorebooks.map(record => ({
@@ -858,15 +932,26 @@ async function hydrateEntryCounts(lorebooks, refreshToken) {
             }
 
             try {
-                const data = await loadWorldInfo(record.apiName);
+                const data = await withTimeout(
+                    loadWorldInfo(record.apiName),
+                    ENTRY_COUNT_TIMEOUT_MS,
+                    `Timed out loading "${record.apiName}"`,
+                );
                 if (refreshToken !== state.refreshToken) {
                     return;
                 }
                 state.entryCounts[record.apiName] = getLorebookEntryCount(data);
+                state.entryCountErrors.delete(record.apiName);
                 touched = true;
                 maybeProgressiveRender();
             } catch (error) {
+                if (refreshToken !== state.refreshToken) {
+                    return;
+                }
                 console.warn(`[Lorebook Manager] Failed to load lorebook "${record.apiName}" for count`, error);
+                state.entryCountErrors.add(record.apiName);
+                touched = true;
+                maybeProgressiveRender();
             }
         }
     }
@@ -1255,7 +1340,7 @@ function createLorebookCard(record, { folderOptions, globalLorebooks }) {
     count.className = 'lmb_card_count';
     count.textContent = typeof record.entryCount === 'number'
         ? `${record.entryCount} entries`
-        : 'Counting entries';
+        : state.entryCountErrors.has(record.apiName) ? 'Count unavailable' : 'Counting entries';
 
     titleRow.append(title, count);
 
@@ -1448,25 +1533,79 @@ async function onCreateLorebookClick() {
 
 async function onImportInputChange(event) {
     const input = event.target;
-    const file = input.files?.[0];
+    const files = Array.from(input.files || []);
     input.value = '';
 
-    if (!file) {
+    if (files.length === 0 || state.isImporting) {
         return;
     }
 
-    const before = new Set(state.lorebooks.map(record => record.apiName));
-    await importWorldInfo(file);
-    await refreshLorebooks({ showLoader: false });
-
-    const imported = state.lorebooks.filter(record => !before.has(record.apiName));
     const folderId = getSelectedRealFolderId();
-    if (imported.length === 1 && folderId) {
-        await moveLorebookToFolder(imported[0].apiName, folderId, { silent: true });
-    }
+    const importedNames = new Set();
+    let unchanged = 0;
+    let cancelled = 0;
+    let failed = 0;
 
-    if (imported.length === 1) {
-        toastr.success(`Imported "${imported[0].displayName}".`);
+    state.isImporting = true;
+    state.dom.importLorebook.disabled = true;
+    state.dom.refresh.disabled = true;
+    setLoading(true);
+
+    try {
+        for (const file of files) {
+            const before = new Set(state.lorebooks.map(record => record.apiName));
+
+            try {
+                const result = await importWorldInfo(file);
+                if (result === false) {
+                    cancelled++;
+                    continue;
+                }
+
+                const refreshed = await refreshLorebooks({ showLoader: false });
+                if (!refreshed) {
+                    failed++;
+                    continue;
+                }
+
+                const added = state.lorebooks
+                    .filter(record => !before.has(record.apiName))
+                    .map(record => record.apiName);
+                added.forEach(apiName => importedNames.add(apiName));
+                if (added.length === 0) {
+                    // Native SillyTavern import returns no success result, so an
+                    // overwrite and an internally handled parse failure cannot
+                    // be distinguished here. Report this honestly as unchanged.
+                    unchanged++;
+                }
+            } catch (error) {
+                failed++;
+                console.error(`[Lorebook Manager] Failed to import "${file.name}"`, error);
+            }
+        }
+
+        if (folderId) {
+            for (const apiName of importedNames) {
+                await moveLorebookToFolder(apiName, folderId, { silent: true });
+            }
+        }
+
+        await refreshLorebooks({ showLoader: false });
+
+        if (files.length === 1 && importedNames.size === 1 && failed === 0) {
+            const imported = findLorebook([...importedNames][0]);
+            toastr.success(`Imported "${imported?.displayName || files[0].name}".`);
+        } else if (failed > 0 || cancelled > 0 || unchanged > 0) {
+            toastr.warning(`Import finished: ${importedNames.size} new, ${unchanged} overwritten or unchanged, ${cancelled} cancelled, ${failed} failed.`);
+        } else {
+            toastr.success(`Imported ${importedNames.size} new lorebooks.`);
+        }
+    } finally {
+        state.isImporting = false;
+        state.dom.importLorebook.disabled = false;
+        state.dom.refresh.disabled = false;
+        setLoading(false);
+        renderManager();
     }
 }
 
@@ -2237,8 +2376,12 @@ async function deleteLorebookWithCover(apiName) {
 }
 
 function scheduleRefresh(delay = 120) {
+    if (state.isImporting) {
+        return;
+    }
     clearTimeout(state.refreshTimer);
     state.refreshTimer = setTimeout(() => {
+        state.refreshTimer = null;
         if (!state.isOpen) {
             return;
         }

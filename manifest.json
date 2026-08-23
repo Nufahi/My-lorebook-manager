@@ -4,7 +4,7 @@
     "js": "index.js",
     "css": "style.css",
     "author": "Nufahi",
-    "version": "0.9.7",
+    "version": "0.9.8",
     "homePage": "https://github.com/Nufahi/My-lorebook-manager",
     "auto_update": true
 }
