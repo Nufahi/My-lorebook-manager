@@ -798,6 +798,121 @@
     opacity: 1;
 }
 
+/* Keep the desktop grid dense too: use the horizontal card composition from
+   mobile while retaining the multi-column layout and full-size controls. */
+@media (min-width: 1201px) {
+    .lmb_grid {
+        grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+        gap: 10px;
+    }
+
+    .lmb_card {
+        flex-direction: row;
+        height: auto;
+        min-height: 184px;
+        border-radius: 12px;
+    }
+
+    .lmb_card_cover {
+        width: 104px;
+        min-height: unset;
+        max-height: unset;
+        flex: 0 0 104px;
+        aspect-ratio: 3 / 4;
+        border-right: 1px solid color-mix(in srgb, var(--lmb-border) 85%, transparent 15%);
+        border-bottom: 0;
+    }
+
+    .lmb_card_badges {
+        left: 6px;
+        top: 34px;
+        gap: 3px;
+    }
+
+    .lmb_badge {
+        gap: 3px;
+        padding: 2px 6px;
+        font-size: 0.65rem;
+    }
+
+    .lmb_card_body {
+        padding: 10px;
+        gap: 4px;
+        overflow: hidden;
+    }
+
+    .lmb_card_title_row {
+        flex-direction: column;
+        gap: 2px;
+    }
+
+    .lmb_card_title {
+        display: -webkit-box;
+        width: 100%;
+        overflow: hidden;
+        font-size: 0.92rem;
+        line-height: 1.28;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+    }
+
+    .lmb_card_count,
+    .lmb_card_meta {
+        overflow: hidden;
+        font-size: 0.72rem;
+        line-height: 1.35;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .lmb_card_tags {
+        max-height: 46px;
+        overflow: hidden;
+    }
+
+    .lmb_tag_chip {
+        padding: 1px 6px;
+        font-size: 0.66rem;
+    }
+
+    .lmb_card_actions {
+        flex: 0 0 164px;
+        flex-direction: column;
+        flex-wrap: nowrap;
+        gap: 5px;
+        margin: 0;
+        padding: 8px;
+        border-left: 1px solid color-mix(in srgb, var(--lmb-border) 85%, transparent 15%);
+    }
+
+    .lmb_card_actions .menu_button,
+    .lmb_card_actions select {
+        min-height: 32px;
+    }
+
+    .lmb_card_toggle_active,
+    .lmb_card_open,
+    .lmb_card_folder_select {
+        flex: 0 0 auto;
+        width: 100%;
+    }
+
+    .lmb_card_tool_row {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        flex: 0 0 auto;
+        gap: 4px;
+    }
+
+    .lmb_card_tool_row > .menu_button {
+        width: 100%;
+        min-width: 0;
+        height: 30px;
+        min-height: 30px;
+        padding: 0;
+    }
+}
+
 @media (max-width: 1200px) {
     .lmb_panel {
         width: calc(100vw - 12px);
