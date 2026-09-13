@@ -10,6 +10,7 @@ Current version: `0.9.8`
   The original codebase that this fork is built on. All core functionality (manager modal, folder system, covers, drag-and-drop, active lorebook tracking) comes from ayvencore's work.
 - **This Fork** — [Codex](https://github.com/Nufahi)
   Multi-select, tags, statistics, activate/deactivate toggle, mobile responsive UI, and various QoL improvements.
+- **Compact Desktop Layout & Character Covers** — adapted from [aceeenvw/i-love-kamoi](https://github.com/aceeenvw/i-love-kamoi).
 - **"Active Lorebooks" idea** — Fae (credited in the original)
 
 ## What's Different From the Original
@@ -38,6 +39,8 @@ The original extension by **[ayvencore](https://github.com/ayvencore)** provides
 - **Statistics Popup** — view detailed stats for any lorebook (entries, tokens, keywords, file size, and more)
 - **Entry Count Display** — each card shows the number of entries in the lorebook
 - **Mobile-First Responsive UI** — fully redesigned layout for phones and tablets: horizontal card layout, collapsible sidebar, compact toolbar, touch-friendly controls
+- **Compact Desktop Grid** — 3–6 columns (5 by default), click a cover to open, and expand the edit button for card tools. Configure columns and page size under Extensions → Lorebook Manager; phone and touch layouts retain their existing controls.
+- **Character Avatar Covers** — a character's primary lorebook automatically displays their avatar when no custom cover is uploaded. Auxiliary bindings do not supply covers.
 
 ## Screenshots
 

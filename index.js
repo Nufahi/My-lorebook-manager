@@ -21,6 +21,7 @@ import {
 } from '../../../world-info.js';
 
 import { Popup } from '../../../popup.js';
+import { getThumbnailUrl } from '../../../../script.js';
 import {
     download,
     ensureImageFormatSupported,
@@ -41,12 +42,16 @@ const SPECIAL_FOLDERS = Object.freeze({
     LTM: '__ltm__',
 });
 const PAGE_SIZE_OPTIONS = Object.freeze([10, 25, 50, 100]);
+const DESKTOP_COLUMN_OPTIONS = Object.freeze([3, 4, 5, 6]);
+// Complement the existing narrow/touch layout, including wide touch screens.
+const desktopLayout = window.matchMedia('(min-width: 1201px) and (pointer: fine)');
 
 const DEFAULT_SETTINGS = Object.freeze({
     folders: [],
     activeFolderId: SPECIAL_FOLDERS.ALL,
     sort: 'name-asc',
     pageSize: 25,
+    desktopColumns: 5,
     openManagerOnDrawer: true,
     tagList: [],
     lorebookTags: {},
@@ -72,6 +77,8 @@ const state = {
     search: '',
     sort: DEFAULT_SETTINGS.sort,
     pageSize: DEFAULT_SETTINGS.pageSize,
+    desktopColumns: DEFAULT_SETTINGS.desktopColumns,
+    expandedBookName: '',
     currentPage: 1,
     pendingCoverTarget: '',
     refreshToken: 0,
@@ -122,6 +129,7 @@ function getManagerSettings() {
         settings.sort = DEFAULT_SETTINGS.sort;
     }
     settings.pageSize = normalizePageSize(settings.pageSize);
+    settings.desktopColumns = normalizeDesktopColumns(settings.desktopColumns);
 
     return settings;
 }
@@ -133,6 +141,40 @@ function normalizePageSize(value) {
 
 function saveManagerSettings() {
     getContext().saveSettingsDebounced();
+}
+
+function normalizeDesktopColumns(value) {
+    const numericValue = Number(value);
+    return DESKTOP_COLUMN_OPTIONS.includes(numericValue) ? numericValue : DEFAULT_SETTINGS.desktopColumns;
+}
+
+function applyManagerLayoutSettings() {
+    state.dom.modal?.style.setProperty('--lmb-desktop-columns', String(state.desktopColumns));
+}
+
+async function ensureSettingsDom() {
+    const container = document.getElementById('extensions_settings2');
+    if (!container || document.querySelector('.lmb_settings')) return;
+
+    container.insertAdjacentHTML('beforeend', await renderExtensionTemplateAsync(EXTENSION_NAME, 'settings'));
+    const pageSize = document.getElementById('lmb_settings_page_size');
+    const desktopColumns = document.getElementById('lmb_settings_desktop_columns');
+    pageSize.value = String(state.pageSize);
+    desktopColumns.value = String(state.desktopColumns);
+
+    pageSize.addEventListener('change', () => {
+        state.pageSize = normalizePageSize(pageSize.value);
+        state.currentPage = 1;
+        getManagerSettings().pageSize = state.pageSize;
+        saveManagerSettings();
+        renderManager();
+    });
+    desktopColumns.addEventListener('change', () => {
+        state.desktopColumns = normalizeDesktopColumns(desktopColumns.value);
+        getManagerSettings().desktopColumns = state.desktopColumns;
+        saveManagerSettings();
+        applyManagerLayoutSettings();
+    });
 }
 
 function getFolders() {
@@ -619,6 +661,7 @@ async function ensureManagerDom() {
             sidebar: modal.querySelector('#lmb_sidebar'),
         };
 
+        applyManagerLayoutSettings();
         bindManagerEvents();
     })();
 
@@ -651,6 +694,8 @@ function bindManagerEvents() {
         state.pageSize = normalizePageSize(state.dom.pageSize.value);
         state.currentPage = 1;
         getManagerSettings().pageSize = state.pageSize;
+        const settingsPageSize = document.getElementById('lmb_settings_page_size');
+        if (settingsPageSize) settingsPageSize.value = String(state.pageSize);
         saveManagerSettings();
         renderManager();
     });
@@ -687,6 +732,11 @@ function bindManagerEvents() {
     state.dom.modal.addEventListener('click', onSidebarOutsideClick, true);
 
     state.dom.grid.addEventListener('click', onGridCheckboxClick);
+    desktopLayout.addEventListener('change', () => {
+        _lastCardTapTime = 0;
+        _lastCardTapName = '';
+        renderManager();
+    });
 
     // Touch support
     bindTouchEvents();
@@ -1272,31 +1322,60 @@ function createLorebookCard(record, { folderOptions, globalLorebooks }) {
     card.draggable = true;
     card.dataset.bookName = record.apiName;
 
+    const desktop = desktopLayout.matches;
+    const charBindings = getCharacterBindingsForLorebook(record.apiName);
+    const primaryBinding = charBindings.find(binding => (
+        binding.type === 'primary' && binding.avatar && binding.avatar !== 'none'
+    ));
+    const coverSource = record.coverPath
+        ? toClientImagePath(record.coverPath)
+        : primaryBinding ? getThumbnailUrl('avatar', primaryBinding.avatar) : '';
+
     const cover = document.createElement('div');
     cover.className = 'lmb_card_cover';
     // cover tap = select, double tap = open (handled by card-level listener)
     cover.title = `Open ${record.displayName}`;
-    if (record.coverPath) {
+    const coverContent = desktop ? document.createElement('button') : cover;
+    if (desktop) {
+        coverContent.type = 'button';
+        coverContent.className = 'lmb_card_cover_open';
+        coverContent.dataset.lmbBookAction = 'open';
+        coverContent.setAttribute('aria-label', `Open ${record.displayName}`);
+        cover.appendChild(coverContent);
+    }
+    if (coverSource) {
         const image = document.createElement('img');
-        image.src = toClientImagePath(record.coverPath);
-        image.alt = `${record.displayName} cover`;
-        cover.appendChild(image);
+        image.src = coverSource;
+        image.alt = record.coverPath ? `${record.displayName} cover` : `${primaryBinding.charName} avatar`;
+        coverContent.appendChild(image);
     }
 
     const fallback = document.createElement('div');
     fallback.className = 'lmb_cover_fallback';
-    if (record.coverPath) {
+    if (coverSource) {
         fallback.classList.add('lmb_hidden');
     }
     fallback.innerHTML = '<i class="fa-solid fa-book-atlas"></i>';
-    cover.appendChild(fallback);
+    coverContent.appendChild(fallback);
 
     const badges = document.createElement('div');
     badges.className = 'lmb_card_badges';
-    getLorebookBadges(record, globalLorebooks).forEach(({ label, iconClass }) => {
+    getLorebookBadges(record, globalLorebooks, charBindings, desktop).forEach(({ label, iconClass }) => {
         badges.appendChild(createBadge(label, iconClass));
     });
-    cover.appendChild(badges);
+    if (desktop) {
+        const badgeStack = document.createElement('div');
+        badgeStack.className = 'lmb_card_badge_stack';
+        const entryCount = typeof record.entryCount === 'number' ? record.entryCount.toLocaleString() : '…';
+        const entryBadge = createBadge(state.entryCountErrors.has(record.apiName) ? '?' : entryCount, 'fa-list');
+        entryBadge.title = typeof record.entryCount === 'number'
+            ? `${entryCount} entries`
+            : state.entryCountErrors.has(record.apiName) ? 'Count unavailable' : 'Counting entries';
+        badgeStack.append(entryBadge, badges);
+        coverContent.appendChild(badgeStack);
+    } else {
+        cover.appendChild(badges);
+    }
 
     // Pin/favorite star
     const pinButton = document.createElement('button');
@@ -1311,8 +1390,14 @@ function createLorebookCard(record, { folderOptions, globalLorebooks }) {
     cover.appendChild(pinButton);
 
     // Selection checkbox
-    const checkbox = document.createElement('div');
+    const checkbox = document.createElement(desktop ? 'button' : 'div');
     checkbox.className = 'lmb_card_checkbox';
+    if (desktop) {
+        checkbox.type = 'button';
+        checkbox.dataset.lmbBookAction = 'toggle-select';
+        checkbox.setAttribute('aria-label', `Select ${record.displayName}`);
+        checkbox.setAttribute('aria-pressed', String(state.selectedBooks.has(record.apiName)));
+    }
     checkbox.innerHTML = state.selectedBooks.has(record.apiName)
         ? '<i class="fa-solid fa-check"></i>'
         : '<i class="fa-regular fa-square"></i>';
@@ -1349,6 +1434,10 @@ function createLorebookCard(record, { folderOptions, globalLorebooks }) {
     meta.textContent = getFolderPathLabel(record.folderId);
 
     body.append(titleRow, meta);
+    if (desktop) {
+        count.remove();
+        meta.remove();
+    }
 
     const cardTags = getLorebookTags(record.apiName);
     if (cardTags.length) {
@@ -1382,6 +1471,10 @@ function createLorebookCard(record, { folderOptions, globalLorebooks }) {
     toggleButton.innerHTML = isActive
         ? '<i class="fa-solid fa-bolt"></i><span>Active</span>'
         : '<i class="fa-regular fa-bolt"></i><span>Activate</span>';
+    if (desktop) {
+        toggleButton.setAttribute('aria-label', toggleButton.title);
+        toggleButton.innerHTML = `<i class="fa-solid ${isActive ? 'fa-toggle-on' : 'fa-toggle-off'}"></i>`;
+    }
 
     const openButton = document.createElement('button');
     openButton.type = 'button';
@@ -1404,7 +1497,6 @@ function createLorebookCard(record, { folderOptions, globalLorebooks }) {
     const tagsButton = createCardIconButton('edit-tags', 'Edit tags', 'fa-tags');
 
     const linkCharButton = createCardIconButton('link-character', 'Link to character', 'fa-user-tag');
-    const charBindings = getCharacterBindingsForLorebook(record.apiName);
     if (charBindings.length > 0) {
         linkCharButton.classList.add('has-link');
         linkCharButton.classList.add('lmb_card_char_link');
@@ -1416,7 +1508,18 @@ function createLorebookCard(record, { folderOptions, globalLorebooks }) {
     toolRow.className = 'lmb_card_tool_row';
     toolRow.append(linkCharButton, duplicateButton, statsButton, tagsButton, renameButton, coverButton, clearCoverButton, deleteButton);
 
-    actions.append(toggleButton, openButton, folderSelect, toolRow);
+    if (desktop) {
+        const expanded = state.expandedBookName === record.apiName;
+        const editButton = createCardIconButton('toggle-edit', 'Edit lorebook', 'fa-pen-to-square');
+        editButton.classList.add('lmb_card_edit_toggle');
+        editButton.setAttribute('aria-expanded', String(expanded));
+        const editGrid = document.createElement('div');
+        editGrid.className = 'lmb_card_edit_grid' + (expanded ? '' : ' lmb_hidden');
+        editGrid.append(folderSelect, toolRow);
+        actions.append(toggleButton, editButton, editGrid);
+    } else {
+        actions.append(toggleButton, openButton, folderSelect, toolRow);
+    }
     card.append(cover, body, actions);
     return card;
 }
@@ -1436,7 +1539,7 @@ function getActiveFolderLabel(folderId) {
     }
 }
 
-function getLorebookBadges(record, globalLorebooks) {
+function getLorebookBadges(record, globalLorebooks, charBindings, desktop) {
     const badges = [];
     if (state.activeLorebookNames.has(record.apiName)) {
         badges.push({ label: 'Active', iconClass: 'fa-bolt' });
@@ -1447,12 +1550,13 @@ function getLorebookBadges(record, globalLorebooks) {
     if (isLtmLorebook(record)) {
         badges.push({ label: 'LTM', iconClass: 'fa-brain' });
     }
-    const charBindings = getCharacterBindingsForLorebook(record.apiName);
     for (const binding of charBindings) {
         const typeLabel = binding.type === 'primary' ? 'Primary' : 'Aux';
         badges.push({ label: `${typeLabel}: ${binding.charName}`, iconClass: 'fa-user-tag' });
     }
-    if (!record.folderId) {
+    if (desktop && record.folderId) {
+        badges.push({ label: getFolderPathLabel(record.folderId), iconClass: 'fa-folder' });
+    } else if (!desktop && !record.folderId) {
         badges.push({ label: 'No Folder', iconClass: 'fa-folder' });
     }
     return badges;
@@ -2029,6 +2133,18 @@ async function onLorebookGridClick(event) {
     }
 
     switch (actionElement.dataset.lmbBookAction) {
+        case 'toggle-select':
+            toggleBookSelection(apiName);
+            break;
+        case 'toggle-edit': {
+            state.expandedBookName = state.expandedBookName === apiName ? '' : apiName;
+            state.dom.grid.querySelectorAll('.lmb_card').forEach(item => {
+                const expanded = item.dataset.bookName === state.expandedBookName;
+                item.querySelector('.lmb_card_edit_grid')?.classList.toggle('lmb_hidden', !expanded);
+                item.querySelector('.lmb_card_edit_toggle')?.setAttribute('aria-expanded', String(expanded));
+            });
+            break;
+        }
         case 'open':
             closeManager();
             openWorldInfoEditor(apiName);
@@ -2677,6 +2793,11 @@ function updateSelectUI() {
 
         const cb = card.querySelector('.lmb_card_checkbox');
         if (cb) {
+            if (cb.tagName === 'BUTTON') {
+                cb.setAttribute('aria-pressed', String(selected));
+                const displayName = card.querySelector('.lmb_card_title')?.textContent || name;
+                cb.setAttribute('aria-label', `${selected ? 'Deselect' : 'Select'} ${displayName}`);
+            }
             const icon = cb.querySelector('i');
             if (icon) {
                 icon.className = selected
@@ -2688,6 +2809,7 @@ function updateSelectUI() {
 }
 
 function onGridCheckboxClick(event) {
+    if (!state.isOpen) return;
     // Any explicit action control (pin star, link, buttons, selects, inputs)
     // handles its own click in onLorebookGridClick — never let it also toggle
     // the selection checkbox. This includes the favorite star, which lives
@@ -2710,6 +2832,11 @@ function onGridCheckboxClick(event) {
     event.stopImmediatePropagation();
     event.preventDefault();
 
+    if (desktopLayout.matches) {
+        if (event.detail < 2) toggleBookSelection(apiName);
+        return;
+    }
+
     const now = Date.now();
     if (apiName === _lastCardTapName && (now - _lastCardTapTime) < DOUBLE_TAP_MS) {
         _lastCardTapTime = 0;
@@ -2725,6 +2852,7 @@ function onGridCheckboxClick(event) {
 }
 
 function onGridDoubleClick(event) {
+    if (desktopLayout.matches) return;
     const card = event.target.closest('.lmb_card');
     if (!card) return;
     const clickedCover = event.target.closest('.lmb_card_cover');
@@ -3972,6 +4100,8 @@ function initialize() {
     state.activeFolderId = settings.activeFolderId;
     state.sort = settings.sort;
     state.pageSize = settings.pageSize;
+    state.desktopColumns = settings.desktopColumns;
+    ensureSettingsDom().catch(error => console.error('[Lorebook Manager] Failed to load settings', error));
 
     startButtonObserver();
     hijackWorldInfoDrawer();

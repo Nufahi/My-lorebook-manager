@@ -48,7 +48,7 @@
                 <i class="fa-solid fa-magnifying-glass"></i>
                 <input id="lmb_search" type="search" class="text_pole textarea_compact" placeholder="Search lorebooks or folders">
             </div>
-            <select id="lmb_sort" class="text_pole textarea_compact">
+            <select id="lmb_sort" class="text_pole textarea_compact" title="Sort lorebooks" aria-label="Sort lorebooks">
                 <option value="name-asc">Name A-Z</option>
                 <option value="name-desc">Name Z-A</option>
                 <option value="entries-desc">Most entries</option>
@@ -56,31 +56,34 @@
                 <option value="recent-desc">Newest first</option>
                 <option value="recent-asc">Oldest first</option>
             </select>
-            <select id="lmb_page_size" class="text_pole textarea_compact" title="Lorebooks per page">
+            <select id="lmb_page_size" class="text_pole textarea_compact" title="Lorebooks per page" aria-label="Lorebooks per page">
                 <option value="10">10 / page</option>
                 <option value="25">25 / page</option>
                 <option value="50">50 / page</option>
                 <option value="100">100 / page</option>
             </select>
-            <button id="lmb_new_lorebook" type="button" class="menu_button interactable">
+            <button id="lmb_new_lorebook" type="button" class="menu_button interactable" title="New lorebook" aria-label="New lorebook">
                 <i class="fa-solid fa-book-medical"></i>
                 <span>New Lorebook</span>
             </button>
-            <button id="lmb_import_lorebook" type="button" class="menu_button interactable">
+            <button id="lmb_import_lorebook" type="button" class="menu_button interactable" title="Import lorebooks" aria-label="Import lorebooks">
                 <i class="fa-solid fa-file-import"></i>
                 <span>Import</span>
             </button>
-            <button id="lmb_export_lorebook" type="button" class="menu_button interactable" title="Export selected lorebooks (or all on this page). Multiple files are bundled into a .zip.">
+            <button id="lmb_export_lorebook" type="button" class="menu_button interactable" title="Export selected lorebooks (or all on this page). Multiple files are bundled into a .zip." aria-label="Export lorebooks">
                 <i class="fa-solid fa-file-export"></i>
                 <span>Export</span>
             </button>
-            <button id="lmb_new_folder" type="button" class="menu_button interactable">
+            <button id="lmb_new_folder" type="button" class="menu_button interactable" title="New folder" aria-label="New folder">
                 <i class="fa-solid fa-folder-plus"></i>
                 <span>New Folder</span>
             </button>
-            <button id="lmb_new_subfolder" type="button" class="menu_button interactable">
+            <button id="lmb_new_subfolder" type="button" class="menu_button interactable" title="New subfolder" aria-label="New subfolder">
                 <i class="fa-solid fa-folder-tree"></i>
                 <span>Subfolder</span>
+            </button>
+            <button type="button" class="menu_button interactable lmb_desktop_close" data-lmb-action="close" title="Close" aria-label="Close lorebook manager">
+                <i class="fa-solid fa-xmark"></i>
             </button>
         </div>
 

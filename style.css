@@ -798,118 +798,202 @@
     opacity: 1;
 }
 
-/* Keep the desktop grid dense too: use the horizontal card composition from
-   mobile while retaining the multi-column layout and full-size controls. */
-@media (min-width: 1201px) {
-    .lmb_grid {
-        grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+/* Desktop layout adapted from aceeenvw/i-love-kamoi. Keep all existing
+   narrow/touch rules below intact. */
+.lmb_toolbar > .lmb_desktop_close {
+    display: none;
+}
+
+@media (min-width: 1201px) and (pointer: fine) {
+    .lmb_panel {
+        padding: 12px;
         gap: 10px;
     }
 
-    .lmb_card {
-        flex-direction: row;
-        height: auto;
-        min-height: 184px;
+    .lmb_header,
+    .lmb_sidebar_header p,
+    .lmb_toolbar > .menu_button span,
+    #lmb_page_size {
+        display: none;
+    }
+
+    .lmb_toolbar {
+        padding: 8px;
+        flex-wrap: nowrap;
         border-radius: 12px;
     }
 
+    .lmb_search_wrap {
+        min-width: 160px;
+        flex: 1 1 auto;
+    }
+
+    .lmb_toolbar > select {
+        flex: 0 0 160px;
+        max-width: 160px;
+    }
+
+    .lmb_toolbar > .menu_button {
+        flex: 0 0 36px;
+        width: 36px;
+        min-width: 36px;
+        height: 36px;
+        padding: 0;
+    }
+
+    .lmb_toolbar > .lmb_desktop_close {
+        display: inline-flex;
+    }
+
+    .lmb_content {
+        grid-template-columns: 230px minmax(0, 1fr);
+        gap: 10px;
+    }
+
+    .lmb_sidebar_header,
+    .lmb_main_header {
+        padding: 10px 12px 8px;
+    }
+
+    .lmb_folder_tree {
+        padding: 0 6px 8px;
+    }
+
+    .lmb_virtual_row,
+    .lmb_folder_row {
+        gap: 3px;
+        margin: 2px 0;
+        padding: 3px;
+        border-radius: 9px;
+    }
+
+    .lmb_folder_button,
+    .lmb_virtual_button {
+        gap: 6px;
+        padding: 5px 7px;
+        border-radius: 8px;
+    }
+
+    .lmb_folder_toggle,
+    .lmb_folder_tool {
+        width: 26px;
+        height: 26px;
+        border-radius: 7px;
+    }
+
+    .lmb_folder_label { gap: 6px; }
+    .lmb_folder_children { margin-left: 14px; padding-left: 6px; }
+
+    .lmb_grid {
+        padding: 0 10px 10px;
+        grid-template-columns: repeat(var(--lmb-desktop-columns, 5), minmax(0, 1fr));
+        gap: 10px;
+    }
+
     .lmb_card_cover {
-        width: 104px;
-        min-height: unset;
-        max-height: unset;
-        flex: 0 0 104px;
+        width: 100%;
+        min-height: 0;
+        max-height: none;
         aspect-ratio: 3 / 4;
-        border-right: 1px solid color-mix(in srgb, var(--lmb-border) 85%, transparent 15%);
-        border-bottom: 0;
+        flex-shrink: 0;
+    }
+
+    .lmb_card_cover_open {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        border: 0;
+        color: inherit;
+        background: transparent;
+        cursor: pointer;
+        font: inherit;
+        text-align: left;
+    }
+
+    .lmb_card_cover_open:focus-visible {
+        outline: 2px solid var(--lmb-accent);
+        outline-offset: -3px;
+    }
+
+    .lmb_card_badge_stack {
+        position: absolute;
+        left: 8px;
+        right: 8px;
+        bottom: 8px;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 4px;
+        z-index: 2;
     }
 
     .lmb_card_badges {
-        left: 6px;
-        top: 34px;
-        gap: 3px;
+        position: static;
+        gap: 4px;
+        align-items: flex-end;
+        max-width: 100%;
     }
 
     .lmb_badge {
         gap: 3px;
-        padding: 2px 6px;
-        font-size: 0.65rem;
+        max-width: 100%;
+        padding: 2px 5px;
+        border-radius: 5px;
+        font-size: 0.68rem;
+        line-height: 1.2;
     }
 
-    .lmb_card_body {
-        padding: 10px;
-        gap: 4px;
+    .lmb_badge span {
         overflow: hidden;
-    }
-
-    .lmb_card_title_row {
-        flex-direction: column;
-        gap: 2px;
-    }
-
-    .lmb_card_title {
-        display: -webkit-box;
-        width: 100%;
-        overflow: hidden;
-        font-size: 0.92rem;
-        line-height: 1.28;
-        -webkit-line-clamp: 2;
-        -webkit-box-orient: vertical;
-    }
-
-    .lmb_card_count,
-    .lmb_card_meta {
-        overflow: hidden;
-        font-size: 0.72rem;
-        line-height: 1.35;
         text-overflow: ellipsis;
         white-space: nowrap;
     }
 
-    .lmb_card_tags {
-        max-height: 46px;
-        overflow: hidden;
-    }
-
-    .lmb_tag_chip {
-        padding: 1px 6px;
-        font-size: 0.66rem;
-    }
-
     .lmb_card_actions {
-        flex: 0 0 164px;
-        flex-direction: column;
-        flex-wrap: nowrap;
-        gap: 5px;
-        margin: 0;
-        padding: 8px;
-        border-left: 1px solid color-mix(in srgb, var(--lmb-border) 85%, transparent 15%);
+        display: grid;
+        grid-template-columns: 1fr repeat(2, 38px) 1fr;
+        align-items: stretch;
     }
 
-    .lmb_card_actions .menu_button,
-    .lmb_card_actions select {
-        min-height: 32px;
-    }
-
-    .lmb_card_toggle_active,
-    .lmb_card_open,
-    .lmb_card_folder_select {
-        flex: 0 0 auto;
+    .lmb_card_actions > .menu_button {
         width: 100%;
+        min-width: 0;
+        padding: 0;
     }
+
+    .lmb_card_toggle_active { grid-column: 2; }
+    .lmb_card_edit_toggle { grid-column: 3; }
+
+    .lmb_card_edit_toggle[aria-expanded='true'] {
+        color: var(--lmb-accent);
+        border-color: color-mix(in srgb, var(--lmb-accent) 52%, var(--lmb-border) 48%);
+    }
+
+    .lmb_card_edit_grid {
+        grid-column: 1 / -1;
+        display: grid;
+        gap: 8px;
+        min-width: 0;
+    }
+
+    .lmb_card_actions select { margin: 0; }
 
     .lmb_card_tool_row {
         display: grid;
-        grid-template-columns: repeat(4, 1fr);
-        flex: 0 0 auto;
-        gap: 4px;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 6px;
     }
 
     .lmb_card_tool_row > .menu_button {
         width: 100%;
         min-width: 0;
-        height: 30px;
-        min-height: 30px;
+        max-width: 38px;
         padding: 0;
+        justify-self: center;
     }
 }
 
@@ -1072,32 +1156,43 @@
         padding: 0 6px;
     }
 
-    /* Compact horizontal toolbar */
+    /* Keep every manager action in one shallow row on touch layouts. */
     .lmb_toolbar {
-        padding: 5px;
-        gap: 4px;
-        border-radius: 10px;
+        padding: 3px;
+        gap: 3px;
+        border-radius: 8px;
         flex-direction: row;
-        flex-wrap: wrap;
+        flex-wrap: nowrap;
         align-items: center;
+        overflow: hidden;
     }
 
     .lmb_search_wrap {
         min-width: 0;
-        flex: 1 1 100%;
-        order: -1;
+        flex: 1 1 auto;
     }
 
     .lmb_search_wrap input {
-        min-height: 32px;
+        min-width: 0;
+        min-height: 30px;
+        padding-left: 28px;
+        padding-right: 4px;
         font-size: 0.82rem;
     }
 
-    .lmb_toolbar > .menu_button {
-        flex: 1 1 auto;
-        min-height: 30px;
+    .lmb_search_wrap i {
+        left: 9px;
         font-size: 0.76rem;
-        padding: 0 6px;
+    }
+
+    .lmb_toolbar > .menu_button {
+        flex: 0 0 28px;
+        width: 28px;
+        min-width: 28px;
+        height: 28px;
+        min-height: 30px;
+        padding: 0;
+        gap: 0;
         justify-content: center;
     }
 
@@ -1107,9 +1202,18 @@
 
     .lmb_toolbar > select {
         min-height: 30px;
+        min-width: 0;
+        padding: 0 2px;
         font-size: 0.76rem;
-        flex: 0 1 auto;
-        max-width: 100px;
+    }
+
+    #lmb_sort {
+        flex: 0 1 76px;
+        width: 76px;
+    }
+
+    #lmb_page_size {
+        display: none;
     }
 
     /* Compact main header */
@@ -1298,20 +1402,33 @@
 
     /* Select bar */
     .lmb_select_bar {
-        padding: 5px 6px;
-        gap: 4px;
+        padding: 3px 4px;
+        gap: 3px;
         border-radius: 8px;
+        flex-wrap: nowrap;
     }
 
     .lmb_select_count {
         font-size: 0.78rem;
-        flex: 1 1 100%;
+        flex: 1 1 auto;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
 
     .lmb_select_bar .menu_button {
-        flex: 1;
-        min-height: 32px;
+        flex: 0 0 28px;
+        width: 28px;
+        min-width: 28px;
+        height: 28px;
+        min-height: 28px;
+        padding: 0;
+        gap: 0;
         font-size: 0.78rem;
+    }
+
+    .lmb_select_bar .menu_button span {
+        display: none;
     }
 
     /* Sidebar compact (overlay) — hide its own header on phones, the toggle
