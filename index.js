@@ -17,7 +17,9 @@ import {
     openWorldInfoEditor,
     saveWorldInfo,
     selected_world_info,
+    updateWorldInfoSettings,
     world_info,
+    world_names,
 } from '../../../world-info.js';
 
 import { Popup } from '../../../popup.js';
@@ -1462,12 +1464,15 @@ function createLorebookCard(record, { folderOptions, globalLorebooks }) {
     const actions = document.createElement('div');
     actions.className = 'lmb_card_actions';
 
-    const isActive = state.activeLorebookNames.has(record.apiName);
+    // This control changes global selection; chat/character bindings have their
+    // own Active badge and must not make a globally disabled toggle look enabled.
+    const isActive = globalLorebooks.has(record.apiName);
     const toggleButton = document.createElement('button');
     toggleButton.type = 'button';
     toggleButton.className = 'menu_button menu_button_icon interactable lmb_card_toggle_active' + (isActive ? ' is-active' : '');
     toggleButton.dataset.lmbBookAction = 'toggle-active';
-    toggleButton.title = isActive ? 'Deactivate lorebook' : 'Activate lorebook';
+    toggleButton.title = isActive ? 'Deactivate globally' : 'Activate globally';
+    toggleButton.setAttribute('aria-pressed', String(isActive));
     toggleButton.innerHTML = isActive
         ? '<i class="fa-solid fa-bolt"></i><span>Active</span>'
         : '<i class="fa-regular fa-bolt"></i><span>Activate</span>';
@@ -2072,28 +2077,39 @@ function clearDropTargetStyles() {
 
 
 async function toggleLorebookActive(apiName) {
-    const index = selected_world_info.indexOf(apiName);
-    if (index >= 0) {
-        selected_world_info.splice(index, 1);
-        toastr.info(`Deactivated "${apiName}".`);
-    } else {
-        selected_world_info.push(apiName);
-        toastr.success(`Activated "${apiName}".`);
+    if (!world_names.includes(apiName)) {
+        toastr.error(`Lorebook "${apiName}" is no longer available. Refresh the manager.`);
+        return;
     }
 
-    // Keep SillyTavern's native global World Info multiselect (#world_info) in
-    // sync so the drawer reflects the change without a reload. Options are keyed
-    // by index (value) but carry the book name as their text.
-    syncNativeWorldInfoSelect();
+    const wasActive = selected_world_info.includes(apiName);
+    const nextSelection = wasActive
+        ? selected_world_info.filter(name => name !== apiName)
+        : [...new Set([...selected_world_info, apiName])];
 
-    getContext().saveSettingsDebounced();
+    try {
+        // The WI API updates both the live selection and its persisted
+        // world_info.globalSelect setting. The generic settings saver does not.
+        updateWorldInfoSettings({}, nextSelection);
+        syncNativeWorldInfoSelect();
 
-    // Notify ST and other extensions that the active world info set changed.
-    const context = getContext();
-    context.eventSource?.emit?.(context.eventTypes.WORLDINFO_SETTINGS_UPDATED);
+        const context = getContext();
+        await context.eventSource.emit(context.eventTypes.WORLDINFO_SETTINGS_UPDATED);
+        renderManager();
 
-    syncActiveLorebooks();
-    renderManager();
+        if (selected_world_info.includes(apiName) === wasActive) {
+            throw new Error('World Info selection did not change');
+        }
+
+        if (wasActive) {
+            toastr.info(`Deactivated "${apiName}" globally.`);
+        } else {
+            toastr.success(`Activated "${apiName}" globally.`);
+        }
+    } catch (error) {
+        console.error('[Lorebook Manager] Failed to toggle lorebook', error);
+        toastr.error(`Failed to change global activation of "${apiName}".`);
+    }
 }
 
 // Reflect the current `selected_world_info` array onto the native #world_info
@@ -2105,19 +2121,25 @@ function syncNativeWorldInfoSelect() {
     }
 
     const activeNames = new Set(selected_world_info);
-    let changed = false;
+    const presentNames = new Set();
     for (const option of select.options) {
-        const shouldSelect = activeNames.has(option.textContent?.trim());
-        if (option.selected !== shouldSelect) {
-            option.selected = shouldSelect;
-            changed = true;
+        // Values are indices into world_names. Rendered labels can differ from
+        // filenames (HTML entities, whitespace), so never use them as identity.
+        const name = option.value === '' ? undefined : world_names[Number(option.value)];
+        option.selected = activeNames.has(name);
+        presentNames.add(name);
+    }
+
+    for (const name of activeNames) {
+        const index = world_names.indexOf(name);
+        if (index >= 0 && !presentNames.has(name)) {
+            select.add(new Option(name, String(index), false, true));
         }
     }
 
-    if (changed) {
-        // jQuery-based selects (select2) need a change event to re-render.
-        select.dispatchEvent(new Event('change', { bubbles: true }));
-    }
+    // Refresh Select2 only. A plain change event runs ST's selection handler,
+    // which would overwrite the API state by reading the DOM back into it.
+    $(select).trigger('change.select2');
 }
 
 async function onLorebookGridClick(event) {
